@@ -15,8 +15,7 @@ type EmploymentType =
   | "Teilzeit"
   | "Minijob"
   | "Shop Manager"
-  | "Praktikant"
-  | "Inhaber";
+  | "Praktikant";
 type EmploymentFilter = EmploymentType | "Alle";
 type ShiftStatus =
   | "ARBEIT"
@@ -29,9 +28,9 @@ type EditableShiftStatus = ShiftStatus | "LEER";
 type AppTab =
   | "dashboard"
   | "wochenplan"
+  | "monatsuebersicht"
   | "stempelzeiten"
-  | "mitarbeiter"
-  | "monatsuebersicht";
+  | "mitarbeiter";
 type UserRole = "admin" | "mitarbeiter" | null;
 
 type DayKey =
@@ -173,6 +172,7 @@ function getEasterSunday(year: number) {
   const m = Math.floor((a + 11 * h + 22 * l) / 451);
   const month = Math.floor((h + l - 7 * m + 114) / 31);
   const day = ((h + l - 7 * m + 114) % 31) + 1;
+
   return new Date(year, month - 1, day);
 }
 
@@ -264,15 +264,11 @@ function downloadTextFile(filename: string, content: string, mimeType: string) {
 }
 
 function getIsoWeekInfo(date: Date) {
-  const copy = new Date(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
-  );
+  const copy = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = copy.getUTCDay() || 7;
   copy.setUTCDate(copy.getUTCDate() + 4 - day);
   const yearStart = new Date(Date.UTC(copy.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(
-    ((copy.getTime() - yearStart.getTime()) / 86400000 + 1) / 7
-  );
+  const week = Math.ceil((((copy.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 
   return {
     year: copy.getUTCFullYear(),
@@ -354,24 +350,6 @@ export default function Home() {
   const [manualClockOut, setManualClockOut] = useState("18:00");
   const [manualReason, setManualReason] = useState("Manuelle Korrektur");
 
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  function closeMobileMenu() {
-    if (isMobile) setMobileMenuOpen(false);
-  }
-
   function clearAuthState() {
     setLoggedIn(false);
     setAuthRole(null);
@@ -384,7 +362,6 @@ export default function Home() {
     if (value === "Minijob") return "Minijob";
     if (value === "Shop Manager") return "Shop Manager";
     if (value === "Praktikant") return "Praktikant";
-    if (value === "Inhaber") return "Inhaber";
     if (value === "admin") return "Shop Manager";
     return "Vollzeit";
   }
@@ -601,14 +578,6 @@ export default function Home() {
     return employee?.employmentType === "Minijob";
   }
 
-  function isNoHourEmployee(employeeId: string) {
-    const employee = employees.find((e) => e.id === employeeId);
-
-    if (!employee) return false;
-
-    return employee.employmentType === "Inhaber";
-  }
-
   async function handleLogin() {
     if (!loginEmail.trim() || !loginPassword.trim()) {
       alert("Bitte E-Mail und Passwort eingeben.");
@@ -754,9 +723,7 @@ export default function Home() {
       .eq("employee_id", Number(employeeId));
 
     if (deleteEntriesError) {
-      alert(
-        "Fehler beim Löschen der Stempelzeiten: " + deleteEntriesError.message
-      );
+      alert("Fehler beim Löschen der Stempelzeiten: " + deleteEntriesError.message);
       return;
     }
 
@@ -766,9 +733,7 @@ export default function Home() {
       .eq("id", Number(employeeId));
 
     if (deleteEmployeeError) {
-      alert(
-        "Fehler beim Löschen des Mitarbeiters: " + deleteEmployeeError.message
-      );
+      alert("Fehler beim Löschen des Mitarbeiters: " + deleteEmployeeError.message);
       return;
     }
 
@@ -809,7 +774,9 @@ export default function Home() {
         return false;
       }
 
-      if (edit.status === "LEER") continue;
+      if (edit.status === "LEER") {
+        continue;
+      }
 
       if (edit.status === "ARBEIT" && (!edit.start || !edit.end)) {
         alert("Bitte Zeiten vollständig eintragen.");
@@ -849,7 +816,7 @@ export default function Home() {
       return;
     }
 
-    if (weeklyPlanEmployees.length === 0) {
+    if (filteredEmployees.length === 0) {
       alert("Keine sichtbaren Mitarbeiter vorhanden.");
       return;
     }
@@ -888,9 +855,7 @@ export default function Home() {
       .eq("week_start", weekStart);
 
     if (deleteError) {
-      alert(
-        "Fehler beim Leeren der aktuellen Woche: " + deleteError.message
-      );
+      alert("Fehler beim Leeren der aktuellen Woche: " + deleteError.message);
       return;
     }
 
@@ -974,6 +939,7 @@ export default function Home() {
     for (const employee of employees) {
       for (const day of dayOrder) {
         const edit = weeklyEdits[getCellKey(employee.id, day)];
+
         if (!edit || edit.status === "LEER") continue;
 
         list.push({
@@ -1041,13 +1007,14 @@ export default function Home() {
   function calculatePreviewShiftMinutes(shift?: Shift) {
     if (!shift) return 0;
 
-    if (isNoHourEmployee(shift.employeeId)) return 0;
-
     if (shift.status === "FEIERTAG") {
       return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
     }
 
-    if (shift.status === "URLAUB") return 0;
+    if (shift.status === "URLAUB") {
+      return 0;
+    }
+
     if (shift.status !== "ARBEIT") return 0;
     if (!shift.start || !shift.end) return 0;
 
@@ -1067,13 +1034,14 @@ export default function Home() {
   function calculateStoredShiftMinutes(shift?: Shift) {
     if (!shift) return 0;
 
-    if (isNoHourEmployee(shift.employeeId)) return 0;
-
     if (shift.status === "FEIERTAG") {
       return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
     }
 
-    if (shift.status === "URLAUB") return 0;
+    if (shift.status === "URLAUB") {
+      return 0;
+    }
+
     if (shift.status !== "ARBEIT") return 0;
     if (!shift.start || !shift.end) return 0;
 
@@ -1092,10 +1060,9 @@ export default function Home() {
 
   function calculateTimeEntryMinutes(entry: TimeEntry) {
     if (!entry.clockIn) return 0;
+
     const start = toMinutes(entry.clockIn);
-    const end = entry.clockOut
-      ? toMinutes(entry.clockOut)
-      : toMinutes(getCurrentTimeHHMM());
+    const end = entry.clockOut ? toMinutes(entry.clockOut) : toMinutes(getCurrentTimeHHMM());
 
     return Math.max(0, end - start);
   }
@@ -1114,7 +1081,9 @@ export default function Home() {
 
   function getDateForDay(day: DayKey) {
     if (!weekStart) return "";
+
     const [year, month, dayOfMonth] = weekStart.split("-").map(Number);
+
     const dayIndexMap: Record<DayKey, number> = {
       monday: 0,
       tuesday: 1,
@@ -1135,15 +1104,13 @@ export default function Home() {
     return `${dd}.${mm}.${yyyy}`;
   }
 
-  const weekInputValue = useMemo(
-    () => getWeekInputValueFromMondayIso(weekStart),
-    [weekStart]
-  );
+  const weekInputValue = useMemo(() => {
+    return getWeekInputValueFromMondayIso(weekStart);
+  }, [weekStart]);
 
-  const calendarWeekLabel = useMemo(
-    () => getCalendarWeekLabelFromMondayIso(weekStart),
-    [weekStart]
-  );
+  const calendarWeekLabel = useMemo(() => {
+    return getCalendarWeekLabelFromMondayIso(weekStart);
+  }, [weekStart]);
 
   const currentEmployee = useMemo(() => {
     if (linkedEmployeeId) {
@@ -1178,11 +1145,7 @@ export default function Home() {
     const result: Record<string, number> = {};
 
     for (const employee of employees) {
-      if (isNoHourEmployee(employee.id)) {
-        result[employee.id] = 0;
-      } else {
-        result[employee.id] = Math.round((employee.weeklyTargetHours || 0) * 60);
-      }
+      result[employee.id] = Math.round((employee.weeklyTargetHours || 0) * 60);
     }
 
     return result;
@@ -1214,20 +1177,8 @@ export default function Home() {
     });
   }, [employees, searchTerm, employmentFilter]);
 
-  const weeklyPlanEmployees = useMemo(() => {
-    const list = [...filteredEmployees];
-
-    if (!linkedEmployeeId) return list;
-
-    return list.sort((a, b) => {
-      if (a.id === linkedEmployeeId) return -1;
-      if (b.id === linkedEmployeeId) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [filteredEmployees, linkedEmployeeId]);
-
   const monthlyOverview = useMemo(() => {
-    return weeklyPlanEmployees.map((employee) => {
+    return filteredEmployees.map((employee) => {
       const plannedMinutes = shifts
         .filter(
           (shift) =>
@@ -1282,8 +1233,7 @@ export default function Home() {
     return timeEntries
       .filter(
         (entry) =>
-          entry.employeeId === currentEmployee?.id &&
-          entry.entryDate === todayIso
+          entry.employeeId === currentEmployee?.id && entry.entryDate === todayIso
       )
       .reduce((sum, entry) => sum + calculateTimeEntryMinutes(entry), 0);
   }, [timeEntries, currentEmployee?.id, todayIso]);
@@ -1299,196 +1249,6 @@ export default function Home() {
       )
       .reduce((sum, entry) => sum + calculateTimeEntryMinutes(entry), 0);
   }, [timeEntries, currentEmployee?.id]);
-
-  function getOpenTimeEntryForEmployee(employeeId: string) {
-    return timeEntries.find(
-      (entry) =>
-        entry.employeeId === employeeId &&
-        entry.entryDate === todayIso &&
-        !entry.clockOut
-    );
-  }
-
-  function getTodayEntriesForEmployee(employeeId: string) {
-    return timeEntries.filter(
-      (entry) => entry.employeeId === employeeId && entry.entryDate === todayIso
-    );
-  }
-
-  function getTodayFirstClockIn(employeeId: string) {
-    const entries = getTodayEntriesForEmployee(employeeId).filter(
-      (entry) => entry.clockIn
-    );
-    if (entries.length === 0) return "-";
-    const sorted = [...entries].sort((a, b) => a.clockIn.localeCompare(b.clockIn));
-    return sorted[0].clockIn;
-  }
-
-  function getTodayLastClockOut(employeeId: string) {
-    const entries = getTodayEntriesForEmployee(employeeId).filter(
-      (entry) => entry.clockOut
-    );
-    if (entries.length === 0) return "-";
-    const sorted = [...entries].sort((a, b) =>
-      (a.clockOut || "").localeCompare(b.clockOut || "")
-    );
-    return sorted[sorted.length - 1].clockOut || "-";
-  }
-
-  function getTodayMinutesForEmployee(employeeId: string) {
-    return getTodayEntriesForEmployee(employeeId).reduce(
-      (sum, entry) => sum + calculateTimeEntryMinutes(entry),
-      0
-    );
-  }
-
-  const liveStampOverview = useMemo(() => {
-    return employees.map((employee) => {
-      const openEntry = getOpenTimeEntryForEmployee(employee.id);
-      const isActive = Boolean(openEntry);
-
-      return {
-        employee,
-        isActive,
-        openEntry,
-        firstClockIn: getTodayFirstClockIn(employee.id),
-        lastClockOut: getTodayLastClockOut(employee.id),
-        todayMinutes: getTodayMinutesForEmployee(employee.id),
-      };
-    });
-  }, [employees, timeEntries, todayIso]);
-
-  const activeStampedCount = useMemo(
-    () => liveStampOverview.filter((item) => item.isActive).length,
-    [liveStampOverview]
-  );
-
-  const inactiveStampedCount = useMemo(
-    () => liveStampOverview.filter((item) => !item.isActive).length,
-    [liveStampOverview]
-  );
-
-  async function handleClockIn() {
-    if (!currentEmployee?.id) {
-      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
-      return;
-    }
-
-    if (openTimeEntry) {
-      alert("Du bist bereits eingestempelt.");
-      return;
-    }
-
-    const { error } = await supabase.from("time_entries").insert([
-      {
-        employee_id: Number(currentEmployee.id),
-        entry_date: todayIso,
-        clock_in: getCurrentTimeHHMM(),
-        clock_out: "",
-        manual_override: false,
-        reason: "",
-      },
-    ]);
-
-    if (error) {
-      alert("Fehler beim Einstempeln: " + error.message);
-      return;
-    }
-
-    await loadTimeEntries();
-    alert("Eingestempelt.");
-  }
-
-  async function handleClockOut() {
-    if (!currentEmployee?.id) {
-      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
-      return;
-    }
-
-    if (!openTimeEntry) {
-      alert("Du bist nicht eingestempelt.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("time_entries")
-      .update({
-        clock_out: getCurrentTimeHHMM(),
-      })
-      .eq("id", openTimeEntry.id);
-
-    if (error) {
-      alert("Fehler beim Ausstempeln: " + error.message);
-      return;
-    }
-
-    await loadTimeEntries();
-    alert("Ausgestempelt.");
-  }
-
-  async function handleAdminClockIn(employeeId: string, employeeName: string) {
-    if (authRole !== "admin") {
-      alert("Nur Admin darf andere Mitarbeiter einstempeln.");
-      return;
-    }
-
-    const existingOpen = getOpenTimeEntryForEmployee(employeeId);
-    if (existingOpen) {
-      alert(`${employeeName} ist bereits eingestempelt.`);
-      return;
-    }
-
-    const { error } = await supabase.from("time_entries").insert([
-      {
-        employee_id: Number(employeeId),
-        entry_date: todayIso,
-        clock_in: getCurrentTimeHHMM(),
-        clock_out: "",
-        manual_override: true,
-        reason: "Admin Einstempeln",
-      },
-    ]);
-
-    if (error) {
-      alert("Fehler beim Einstempeln: " + error.message);
-      return;
-    }
-
-    await loadTimeEntries();
-    alert(`${employeeName} wurde eingestempelt.`);
-  }
-
-  async function handleAdminClockOut(employeeId: string, employeeName: string) {
-    if (authRole !== "admin") {
-      alert("Nur Admin darf andere Mitarbeiter ausstempeln.");
-      return;
-    }
-
-    const existingOpen = getOpenTimeEntryForEmployee(employeeId);
-    if (!existingOpen) {
-      alert(`${employeeName} ist nicht eingestempelt.`);
-      return;
-    }
-
-    const { error } = await supabase
-      .from("time_entries")
-      .update({
-        clock_out: getCurrentTimeHHMM(),
-        manual_override: true,
-        reason: existingOpen.reason
-          ? `${existingOpen.reason} / Admin Ausstempeln`
-          : "Admin Ausstempeln",
-      })
-      .eq("id", existingOpen.id);
-
-    if (error) {
-      alert("Fehler beim Ausstempeln: " + error.message);
-      return;
-    }
-
-    await loadTimeEntries();
-    alert(`${employeeName} wurde ausgestempelt.`);
-  }
 
   function updateTimeEntryLocal(id: number, patch: Partial<TimeEntry>) {
     setTimeEntries((prev) =>
@@ -1585,6 +1345,64 @@ export default function Home() {
     if (!correctionEmployeeId) return [];
     return timeEntries.filter((entry) => entry.employeeId === correctionEmployeeId);
   }, [timeEntries, correctionEmployeeId]);
+
+  async function handleClockIn() {
+    if (!currentEmployee?.id) {
+      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
+      return;
+    }
+
+    if (openTimeEntry) {
+      alert("Du bist bereits eingestempelt.");
+      return;
+    }
+
+    const { error } = await supabase.from("time_entries").insert([
+      {
+        employee_id: Number(currentEmployee.id),
+        entry_date: todayIso,
+        clock_in: getCurrentTimeHHMM(),
+        clock_out: "",
+        manual_override: false,
+        reason: "",
+      },
+    ]);
+
+    if (error) {
+      alert("Fehler beim Einstempeln: " + error.message);
+      return;
+    }
+
+    await loadTimeEntries();
+    alert("Eingestempelt.");
+  }
+
+  async function handleClockOut() {
+    if (!currentEmployee?.id) {
+      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
+      return;
+    }
+
+    if (!openTimeEntry) {
+      alert("Du bist nicht eingestempelt.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("time_entries")
+      .update({
+        clock_out: getCurrentTimeHHMM(),
+      })
+      .eq("id", openTimeEntry.id);
+
+    if (error) {
+      alert("Fehler beim Ausstempeln: " + error.message);
+      return;
+    }
+
+    await loadTimeEntries();
+    alert("Ausgestempelt.");
+  }
 
   function getCellExportText(employeeId: string, day: DayKey) {
     const edit = weeklyEdits[getCellKey(employeeId, day)] ?? emptyEdit();
@@ -1810,6 +1628,50 @@ export default function Home() {
     printWindow.print();
   }
 
+  function renderPlanReadOnly(edit: WeeklyEdit) {
+    if (edit.status === "LEER") {
+      return <span style={{ color: "#888" }}>-</span>;
+    }
+
+    if (edit.status === "ARBEIT") {
+      return (
+        <div>
+          <div style={statusBadgeBlue}>ARBEIT</div>
+          <div style={{ marginTop: "6px", fontWeight: "bold" }}>
+            ({edit.location}) {edit.start}-{edit.end}
+          </div>
+          {edit.note ? (
+            <div style={{ marginTop: "6px", color: "#5f6368", fontSize: "12px" }}>
+              {edit.note}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    const style =
+      edit.status === "FEIERTAG"
+        ? statusBadgeRed
+        : edit.status === "URLAUB"
+        ? statusBadgeGreen
+        : edit.status === "KRANK"
+        ? statusBadgeOrange
+        : edit.status === "SCHULUNG"
+        ? statusBadgeYellow
+        : statusBadgeGray;
+
+    return (
+      <div>
+        <div style={style}>{edit.status}</div>
+        {edit.note ? (
+          <div style={{ marginTop: "6px", color: "#5f6368", fontSize: "12px" }}>
+            {edit.note}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderDashboard() {
     const currentVacationSummary = currentEmployee
       ? vacationSummaryByEmployee[currentEmployee.id]
@@ -1817,88 +1679,102 @@ export default function Home() {
 
     return (
       <>
+        <div style={heroCardStyle}>
+          <div>
+            <div style={eyebrowStyle}>Arbeitszeit Tool</div>
+            <h2 style={{ margin: "6px 0 10px 0", fontSize: "30px", color: "#111" }}>
+              Übersicht auf einen Blick
+            </h2>
+            <p style={{ margin: 0, color: "#5f6368", maxWidth: "700px" }}>
+              Login aktiv. Rolle: <strong>{authRole ?? "-"}</strong> · Konto{" "}
+              <strong>{authEmail || "-"}</strong>
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button onClick={() => setActiveTab("wochenplan")} style={primaryButtonStyle}>
+              Zum Wochenplan
+            </button>
+            <button
+              onClick={() => setActiveTab("monatsuebersicht")}
+              style={secondaryButtonStyle}
+            >
+              Monatsübersicht
+            </button>
+          </div>
+        </div>
+
         {!currentEmployee ? (
-          <div style={warningBannerStyle}>
+          <div style={warningCardStyle}>
             Dein Login ist noch keinem Mitarbeiter zugeordnet. Alles ansehen geht
             trotzdem, aber Ein- und Ausstempeln geht erst nach der Verknüpfung.
           </div>
         ) : null}
 
-        <div style={isMobile ? modernHeroMobileStyle : modernHeroStyle}>
-          <div>
-            <div style={modernHeroEyebrowStyle}>Arbeitszeit Tool</div>
-            <h2 style={isMobile ? modernHeroTitleMobileStyle : modernHeroTitleStyle}>Dashboard</h2>
-            <p style={modernHeroTextStyle}>
-              Übersicht über Schichten, Resturlaub, Stempelstatus und aktuelle
-              Arbeitszeiten.
-            </p>
-          </div>
-
-          <div style={heroButtonWrapStyle}>
-            <button
-              onClick={() => setActiveTab("wochenplan")}
-              style={primaryActionButtonStyle}
-            >
-              Wochenplan öffnen
-            </button>
-            <button
-              onClick={() => setActiveTab("stempelzeiten")}
-              style={secondaryActionButtonStyle}
-            >
-              Stempelübersicht
-            </button>
-          </div>
-        </div>
-
-        <div style={dashboardGridStyle}>
-          <InfoCard title="Status">
+        <div style={statsGridStyle}>
+          <StatCard title="Status">
             {clockedIn
               ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
               : "Nicht eingestempelt"}
-          </InfoCard>
-          <InfoCard title="Geplante Stunden diese Woche">
+          </StatCard>
+
+          <StatCard title="Geplante Stunden diese Woche">
             {formatHours(employeeWeekMinutes[currentEmployee?.id || ""] || 0)}
-          </InfoCard>
-          <InfoCard title="Sollstunden diese Woche">
-            {formatHours(
-              weeklyTargetMinutesByEmployee[currentEmployee?.id || ""] || 0
-            )}
-          </InfoCard>
-          <InfoCard title="Überstunden / Minusstunden">
-            {formatDifference(
-              weeklyDifferenceByEmployee[currentEmployee?.id || ""] || 0
-            )}
-          </InfoCard>
-          <InfoCard title="Gestempelte Monatsstunden">
+          </StatCard>
+
+          <StatCard title="Sollstunden diese Woche">
+            {formatHours(weeklyTargetMinutesByEmployee[currentEmployee?.id || ""] || 0)}
+          </StatCard>
+
+          <StatCard title="Überstunden / Minusstunden Woche">
+            {formatDifference(weeklyDifferenceByEmployee[currentEmployee?.id || ""] || 0)}
+          </StatCard>
+
+          <StatCard title="Gestempelte Monatsstunden">
             {formatHours(monthStampedMinutes)}
-          </InfoCard>
-          <InfoCard title={`Resturlaub ${selectedVacationYear}`}>
-            {currentVacationSummary
-              ? `${currentVacationSummary.remaining} Tage`
-              : "0 Tage"}
-          </InfoCard>
+          </StatCard>
+
+          <StatCard title={`Resturlaub ${selectedVacationYear}`}>
+            {currentVacationSummary ? `${currentVacationSummary.remaining} Tage` : "0 Tage"}
+          </StatCard>
         </div>
 
-        <div style={quickActionsGridStyle}>
-          <QuickActionModern
+        <div style={dashboardActionsGridStyle}>
+          <QuickActionCard
             title="Wochenplan"
-            text="Schichten ansehen oder bearbeiten."
+            text={
+              authRole === "admin"
+                ? "Dienstplan direkt in der Tabelle pflegen."
+                : "Kompletten Plan ansehen."
+            }
+            button="Öffnen"
             onClick={() => setActiveTab("wochenplan")}
           />
-          <QuickActionModern
-            title="Stempelzeiten"
-            text="Wer ist drin, wer ist draußen."
-            onClick={() => setActiveTab("stempelzeiten")}
-          />
-          <QuickActionModern
-            title="Mitarbeiter"
-            text="Mitarbeiterdaten verwalten."
-            onClick={() => setActiveTab("mitarbeiter")}
-          />
-          <QuickActionModern
+          <QuickActionCard
             title="Monatsübersicht"
             text="Geplante und gestempelte Stunden vergleichen."
+            button="Anzeigen"
             onClick={() => setActiveTab("monatsuebersicht")}
+          />
+          <QuickActionCard
+            title="Stempelzeiten"
+            text={
+              authRole === "admin"
+                ? "Einträge prüfen und manuell korrigieren."
+                : "Alle Stempelzeiten ansehen."
+            }
+            button="Öffnen"
+            onClick={() => setActiveTab("stempelzeiten")}
+          />
+          <QuickActionCard
+            title="Mitarbeiter"
+            text={
+              authRole === "admin"
+                ? "Mitarbeiter anlegen, bearbeiten und löschen."
+                : "Mitarbeiterliste ansehen."
+            }
+            button="Öffnen"
+            onClick={() => setActiveTab("mitarbeiter")}
           />
         </div>
       </>
@@ -1908,284 +1784,72 @@ export default function Home() {
   function renderWochenplan() {
     const showAdminActions = authRole === "admin";
 
-    function getOwnRowBackground(isOwnRow: boolean) {
-      return isOwnRow ? "#eef5ff" : "#ffffff";
-    }
-
-    function getStatusPalette(status: EditableShiftStatus) {
-      switch (status) {
-        case "ARBEIT":
-          return {
-            bg: "#eff6ff",
-            border: "#bfdbfe",
-            badgeBg: "#2563eb",
-            badgeColor: "#ffffff",
-          };
-        case "FREI":
-          return {
-            bg: "#f3f4f6",
-            border: "#e5e7eb",
-            badgeBg: "#6b7280",
-            badgeColor: "#ffffff",
-          };
-        case "URLAUB":
-          return {
-            bg: "#ecfdf3",
-            border: "#bbf7d0",
-            badgeBg: "#16a34a",
-            badgeColor: "#ffffff",
-          };
-        case "KRANK":
-          return {
-            bg: "#fff7ed",
-            border: "#fdba74",
-            badgeBg: "#ea580c",
-            badgeColor: "#ffffff",
-          };
-        case "SCHULUNG":
-          return {
-            bg: "#fefce8",
-            border: "#fde68a",
-            badgeBg: "#ca8a04",
-            badgeColor: "#ffffff",
-          };
-        case "FEIERTAG":
-          return {
-            bg: "#fef2f2",
-            border: "#fecaca",
-            badgeBg: "#dc2626",
-            badgeColor: "#ffffff",
-          };
-        default:
-          return {
-            bg: "#ffffff",
-            border: "#e5e7eb",
-            badgeBg: "#9ca3af",
-            badgeColor: "#ffffff",
-          };
-      }
-    }
-
-    function renderPlanCard(
-      employee: Employee,
-      day: DayKey,
-      isOwnRow: boolean
-    ) {
-      const key = getCellKey(employee.id, day);
-      const edit = weeklyEdits[key] ?? emptyEdit();
-      const palette = getStatusPalette(edit.status);
-      const dateIso = getShiftDateIso(weekStart, day);
-      const specialLabel = getSpecialDayLabel(dateIso, day);
-
-      const cardStyle: CSSProperties = {
-        borderRadius: "18px",
-        border: `1px solid ${palette.border}`,
-        background: edit.status === "LEER" ? "#ffffff" : palette.bg,
-        padding: "12px",
-        minHeight: isMobile ? "auto" : "188px",
-        boxShadow: isOwnRow
-          ? "0 0 0 2px rgba(37,99,235,0.14)"
-          : "0 6px 18px rgba(15,23,42,0.05)",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-      };
-
-      if (authRole !== "admin") {
-        return (
-          <div style={cardStyle}>
-            <div>
-              <div style={cardTopRowStyle}>
-                <div style={dayCardTitleStyle}>{dayLabels[day]}</div>
-                <div style={dayCardDateStyle}>{getDateForDay(day)}</div>
-              </div>
-
-              <div
-                style={{
-                  ...statusPillStyle,
-                  background: palette.badgeBg,
-                  color: palette.badgeColor,
-                }}
-              >
-                {edit.status === "LEER" ? "LEER" : edit.status}
-              </div>
-
-              {specialLabel ? (
-                <div style={specialLabelStyle}>{specialLabel}</div>
-              ) : null}
-
-              {edit.status === "ARBEIT" ? (
-                <>
-                  <div style={timeBigStyle}>
-                    {edit.start} - {edit.end}
-                  </div>
-                  <div style={subInfoStyle}>Standort: {edit.location}</div>
-                </>
-              ) : null}
-
-              {edit.note ? <div style={noteTextStyle}>{edit.note}</div> : null}
-
-              {edit.status === "LEER" ? (
-                <div style={notePlaceholderStyle}>Keine Eintragung</div>
-              ) : null}
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div style={cardStyle}>
-          <div>
-            <div style={cardTopRowStyle}>
-              <div style={dayCardTitleStyle}>{dayLabels[day]}</div>
-              <div style={dayCardDateStyle}>{getDateForDay(day)}</div>
-            </div>
-
-            <div
-              style={{
-                ...statusPillStyle,
-                background: palette.badgeBg,
-                color: palette.badgeColor,
-              }}
-            >
-              {edit.status === "LEER" ? "LEER" : edit.status}
-            </div>
-
-            {specialLabel ? (
-              <div style={specialLabelStyle}>{specialLabel}</div>
-            ) : null}
-
-            <select
-              value={edit.status}
-              onChange={(e) =>
-                updateCell(employee.id, day, {
-                  status: e.target.value as EditableShiftStatus,
-                })
-              }
-              style={smallInputStyle}
-            >
-              <option value="LEER">-</option>
-              <option value="ARBEIT">ARBEIT</option>
-              <option value="FREI">FREI</option>
-              <option value="FEIERTAG">FEIERTAG</option>
-              <option value="URLAUB">URLAUB</option>
-              <option value="KRANK">KRANK</option>
-              <option value="SCHULUNG">SCHULUNG</option>
-            </select>
-
-            {edit.status === "ARBEIT" ? (
-              <>
-                <input
-                  type="time"
-                  value={edit.start}
-                  onChange={(e) =>
-                    updateCell(employee.id, day, {
-                      start: e.target.value,
-                    })
-                  }
-                  style={smallInputStyle}
-                />
-
-                <input
-                  type="time"
-                  value={edit.end}
-                  onChange={(e) =>
-                    updateCell(employee.id, day, {
-                      end: e.target.value,
-                    })
-                  }
-                  style={smallInputStyle}
-                />
-
-                <select
-                  value={edit.location}
-                  onChange={(e) =>
-                    updateCell(employee.id, day, {
-                      location: e.target.value as Location,
-                    })
-                  }
-                  style={smallInputStyle}
-                >
-                  <option value="PF">PF</option>
-                  <option value="KA">KA</option>
-                </select>
-              </>
-            ) : null}
-
-            <input
-              value={edit.note}
-              onChange={(e) =>
-                updateCell(employee.id, day, {
-                  note: e.target.value,
-                })
-              }
-              placeholder="Notiz"
-              style={smallInputStyle}
-            />
-          </div>
-        </div>
-      );
+    function getOwnRowBackground(isOwnRow: boolean, isSpecial: boolean) {
+      if (isOwnRow && isSpecial) return "#dbeafe";
+      if (isOwnRow) return "#eff6ff";
+      if (isSpecial) return "#fff7f7";
+      return "#fff";
     }
 
     return (
       <>
-        <PageHeader
-          title="Wochenplan"
-          subtitle={`${calendarWeekLabel} · Moderne Übersicht mit farbigen Tageskarten`}
-          right={
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Wochenplan</h2>
+              <p style={sectionTextStyle}>
+                {calendarWeekLabel} · Sonntag steht automatisch auf FREI. Feiertage
+                werden automatisch als FEIERTAG markiert.
+              </p>
+            </div>
+
             <div style={actionsWrapStyle}>
               <button
                 onClick={() => setWeekStart((prev) => shiftIsoDate(prev, -7))}
-                style={secondaryActionButtonStyle}
+                style={secondaryButtonStyle}
               >
                 Vorwoche
               </button>
               <button
                 onClick={() => setWeekStart((prev) => shiftIsoDate(prev, 7))}
-                style={secondaryActionButtonStyle}
+                style={secondaryButtonStyle}
               >
                 Nächste Woche
               </button>
+
               {showAdminActions ? (
-                <button
-                  onClick={copyPreviousWeekToCurrent}
-                  style={secondaryActionButtonStyle}
-                >
+                <button onClick={copyPreviousWeekToCurrent} style={secondaryButtonStyle}>
                   Vorwoche kopieren
                 </button>
               ) : null}
+
               {showAdminActions ? (
-                <button
-                  onClick={saveAllVisibleWeeks}
-                  style={primaryActionButtonStyle}
-                >
-                  Alle speichern
+                <button onClick={saveAllVisibleWeeks} style={primaryButtonStyle}>
+                  Alle sichtbaren Zeilen speichern
                 </button>
               ) : null}
             </div>
-          }
-        />
+          </div>
 
-        <div style={contentPanelStyle}>
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Name suchen</label>
+          <div style={filtersGridStyle}>
+            <div>
+              <label style={labelStyle}>Name suchen</label>
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="z. B. Dennis"
-                style={modernInputStyle}
+                style={inputStyle}
               />
             </div>
 
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Anstellungsart</label>
+            <div>
+              <label style={labelStyle}>Anstellungsart filtern</label>
               <select
                 value={employmentFilter}
                 onChange={(e) =>
                   setEmploymentFilter(e.target.value as EmploymentFilter)
                 }
-                style={modernInputStyle}
+                style={inputStyle}
               >
                 <option value="Alle">Alle</option>
                 <option value="Vollzeit">Vollzeit</option>
@@ -2193,127 +1857,377 @@ export default function Home() {
                 <option value="Minijob">Minijob</option>
                 <option value="Shop Manager">Shop Manager</option>
                 <option value="Praktikant">Praktikant</option>
-                  <option value="Inhaber">Inhaber</option>
               </select>
             </div>
 
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Kalenderwoche</label>
+            <div>
+              <label style={labelStyle}>Kalenderwoche</label>
               <input
                 type="week"
                 value={weekInputValue}
-                onChange={(e) =>
-                  setWeekStart(getMondayIsoFromWeekInput(e.target.value))
-                }
-                style={modernInputStyle}
+                onChange={(e) => setWeekStart(getMondayIsoFromWeekInput(e.target.value))}
+                style={inputStyle}
               />
             </div>
-
-            <div style={filterInfoStyle}>
-              <div style={filterInfoTitleStyle}>Ausgewählt</div>
-              <div style={filterInfoValueStyle}>{calendarWeekLabel}</div>
-              <div style={filterInfoSubStyle}>Woche ab {weekStart}</div>
-            </div>
           </div>
 
-          <div style={{ ...actionsWrapStyle, marginBottom: "18px" }}>
-            <button onClick={exportWeekCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-            <button onClick={printWeekPlan} style={secondaryActionButtonStyle}>
-              Drucken / PDF
-            </button>
+          <div style={{ marginTop: "12px", color: "#5f6368", fontSize: "14px" }}>
+            Ausgewählt: <strong>{calendarWeekLabel}</strong> · Woche ab{" "}
+            <strong>{weekStart}</strong>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-            {weeklyPlanEmployees.length === 0 ? (
-              <div style={emptyStateStyle}>Keine Mitarbeiter gefunden.</div>
-            ) : (
-              weeklyPlanEmployees.map((employee) => {
-                const isOwnRow = employee.id === linkedEmployeeId;
+          <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+            <button onClick={exportWeekCsv} style={secondaryButtonStyle}>
+              Wochenplan Excel/CSV
+            </button>
+            <button onClick={printWeekPlan} style={secondaryButtonStyle}>
+              Wochenplan PDF / Drucken
+            </button>
+          </div>
+        </div>
 
-                return (
-                  <div
-                    key={employee.id}
-                    style={{
-                      ...employeeBlockStyle,
-                      background: getOwnRowBackground(isOwnRow),
-                      border: isOwnRow
-                        ? "1px solid #bfdbfe"
-                        : "1px solid #edf1f7",
-                    }}
-                  >
-                    <div style={employeeBlockHeaderStyle}>
-                      <div>
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: showAdminActions ? "1950px" : "1500px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Name</th>
+                {dayOrder.map((day) => {
+                  const dateIso = getShiftDateIso(weekStart, day);
+                  const specialLabel = getSpecialDayLabel(dateIso, day);
+                  const isSpecial = Boolean(specialLabel);
+
+                  return (
+                    <th
+                      key={day}
+                      style={{
+                        ...thStyle,
+                        background: isSpecial ? "#fee2e2" : "#f3f4f6",
+                      }}
+                    >
+                      <div>{dayLabels[day]}</div>
+                      <div style={{ fontSize: "12px", fontWeight: "normal" }}>
+                        {getDateForDay(day) || "-"}
+                      </div>
+                      {specialLabel ? (
                         <div
                           style={{
-                            ...employeeNameModernStyle,
-                            color: isOwnRow ? "#2563eb" : "#111827",
+                            fontSize: "11px",
+                            fontWeight: "bold",
+                            color: "#b91c1c",
+                            marginTop: "4px",
                           }}
                         >
-                          {employee.name}
+                          {specialLabel}
                         </div>
-                        <div style={employeeSubInfoStyle}>
-                          {employee.employmentType}
-                          {isOwnRow ? " · Deine Zeile" : ""}
-                        </div>
-                      </div>
+                      ) : null}
+                    </th>
+                  );
+                })}
+                <th style={thStyle}>Geplant</th>
+                <th style={thStyle}>Soll</th>
+                <th style={thStyle}>Differenz</th>
+                {showAdminActions ? <th style={thStyle}>Aktion</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.length === 0 ? (
+                <tr>
+                  <td style={tableCellStyle} colSpan={showAdminActions ? 12 : 11}>
+                    Keine Mitarbeiter gefunden.
+                  </td>
+                </tr>
+              ) : (
+                filteredEmployees.map((employee) => {
+                  const isOwnRow = employee.id === linkedEmployeeId;
 
-                      <div style={summaryChipWrapStyle}>
-                        <div style={summaryChipStyle}>
-                          <div style={summaryChipLabelStyle}>Geplant</div>
-                          <div style={summaryChipValueStyle}>
-                            {formatHours(employeeWeekMinutes[employee.id] || 0)}
+                  return (
+                    <tr key={employee.id}>
+                      <td
+                        style={{
+                          ...nameCellStyle,
+                          background: isOwnRow ? "#dbeafe" : "#fff",
+                          color: isOwnRow ? "#1d4ed8" : "#111",
+                        }}
+                      >
+                        {employee.name}
+                        {isOwnRow ? (
+                          <div style={{ fontSize: "11px", marginTop: "4px" }}>
+                            Deine Zeile
                           </div>
-                        </div>
-                        <div style={summaryChipStyle}>
-                          <div style={summaryChipLabelStyle}>Soll</div>
-                          <div style={summaryChipValueStyle}>
-                            {formatHours(
-                              weeklyTargetMinutesByEmployee[employee.id] || 0
-                            )}
-                          </div>
-                        </div>
-                        <div style={summaryChipStyle}>
-                          <div style={summaryChipLabelStyle}>Differenz</div>
-                          <div
+                        ) : null}
+                      </td>
+
+                      {dayOrder.map((day) => {
+                        const key = getCellKey(employee.id, day);
+                        const edit = weeklyEdits[key] ?? emptyEdit();
+                        const dateIso = getShiftDateIso(weekStart, day);
+                        const specialLabel = getSpecialDayLabel(dateIso, day);
+                        const isSpecial = Boolean(specialLabel);
+                        const cellBackground = getOwnRowBackground(isOwnRow, isSpecial);
+
+                        if (authRole !== "admin") {
+                          return (
+                            <td
+                              key={day}
+                              style={{
+                                ...editCellStyle,
+                                background: cellBackground,
+                                boxShadow: isOwnRow
+                                  ? "inset 0 0 0 1px #bfdbfe"
+                                  : undefined,
+                              }}
+                            >
+                              {renderPlanReadOnly(edit)}
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td
+                            key={day}
                             style={{
-                              ...summaryChipValueStyle,
-                              color:
-                                (weeklyDifferenceByEmployee[employee.id] || 0) > 0
-                                  ? "#15803d"
-                                  : (weeklyDifferenceByEmployee[employee.id] || 0) <
-                                    0
-                                  ? "#dc2626"
-                                  : "#111827",
+                              ...editCellStyle,
+                              background: cellBackground,
+                              boxShadow: isOwnRow
+                                ? "inset 0 0 0 1px #bfdbfe"
+                                : undefined,
                             }}
                           >
-                            {formatDifference(
-                              weeklyDifferenceByEmployee[employee.id] || 0
-                            )}
-                          </div>
-                        </div>
-                        {showAdminActions ? (
+                            <select
+                              value={edit.status}
+                              onChange={(e) =>
+                                updateCell(employee.id, day, {
+                                  status: e.target.value as EditableShiftStatus,
+                                })
+                              }
+                              style={smallInputStyle}
+                            >
+                              <option value="LEER">-</option>
+                              <option value="ARBEIT">ARBEIT</option>
+                              <option value="FREI">FREI</option>
+                              <option value="FEIERTAG">FEIERTAG</option>
+                              <option value="URLAUB">URLAUB</option>
+                              <option value="KRANK">KRANK</option>
+                              <option value="SCHULUNG">SCHULUNG</option>
+                            </select>
+
+                            {edit.status === "ARBEIT" ? (
+                              <>
+                                <input
+                                  type="time"
+                                  value={edit.start}
+                                  onChange={(e) =>
+                                    updateCell(employee.id, day, {
+                                      start: e.target.value,
+                                    })
+                                  }
+                                  style={smallInputStyle}
+                                />
+
+                                <input
+                                  type="time"
+                                  value={edit.end}
+                                  onChange={(e) =>
+                                    updateCell(employee.id, day, {
+                                      end: e.target.value,
+                                    })
+                                  }
+                                  style={smallInputStyle}
+                                />
+
+                                <select
+                                  value={edit.location}
+                                  onChange={(e) =>
+                                    updateCell(employee.id, day, {
+                                      location: e.target.value as Location,
+                                    })
+                                  }
+                                  style={smallInputStyle}
+                                >
+                                  <option value="PF">PF</option>
+                                  <option value="KA">KA</option>
+                                </select>
+                              </>
+                            ) : null}
+
+                            <input
+                              value={edit.note}
+                              onChange={(e) =>
+                                updateCell(employee.id, day, {
+                                  note: e.target.value,
+                                })
+                              }
+                              placeholder="Notiz"
+                              style={smallInputStyle}
+                            />
+                          </td>
+                        );
+                      })}
+
+                      <td
+                        style={{
+                          ...hoursCellStyle,
+                          background: isOwnRow ? "#dbeafe" : "#f9fafb",
+                          color: isOwnRow ? "#1d4ed8" : "#111",
+                        }}
+                      >
+                        {formatHours(employeeWeekMinutes[employee.id] || 0)}
+                      </td>
+
+                      <td
+                        style={{
+                          ...hoursCellStyle,
+                          background: isOwnRow ? "#dbeafe" : "#f9fafb",
+                          color: isOwnRow ? "#1d4ed8" : "#111",
+                        }}
+                      >
+                        {formatHours(weeklyTargetMinutesByEmployee[employee.id] || 0)}
+                      </td>
+
+                      <td
+                        style={{
+                          ...hoursCellStyle,
+                          background: isOwnRow ? "#dbeafe" : "#f9fafb",
+                          color:
+                            (weeklyDifferenceByEmployee[employee.id] || 0) > 0
+                              ? "#15803d"
+                              : (weeklyDifferenceByEmployee[employee.id] || 0) < 0
+                              ? "#b91c1c"
+                              : isOwnRow
+                              ? "#1d4ed8"
+                              : "#111",
+                        }}
+                      >
+                        {formatDifference(weeklyDifferenceByEmployee[employee.id] || 0)}
+                      </td>
+
+                      {showAdminActions ? (
+                        <td style={tableCellStyle}>
                           <button
                             onClick={() => saveEmployeeWeek(employee.id)}
-                            style={primaryActionButtonStyle}
+                            style={primaryButtonStyle}
                           >
                             Woche speichern
                           </button>
-                        ) : null}
-                      </div>
-                    </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
 
-                    <div style={isMobile ? dayGridMobileStyle : dayGridStyle}>
-                      {dayOrder.map((day) => (
-                        <div key={day}>{renderPlanCard(employee, day, isOwnRow)}</div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })
-            )}
+  function renderMonatsuebersicht() {
+    return (
+      <>
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Monatsübersicht</h2>
+              <p style={sectionTextStyle}>
+                Vergleicht geplante Stunden mit den gestempelten Zeiten.
+              </p>
+            </div>
+            <div style={actionsWrapStyle}>
+              <button onClick={exportMonthCsv} style={secondaryButtonStyle}>
+                Monatsübersicht Excel/CSV
+              </button>
+            </div>
           </div>
+
+          <div style={{ maxWidth: "220px" }}>
+            <label style={labelStyle}>Monat</label>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+        </div>
+
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "900px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Anstellungsart</th>
+                <th style={thStyle}>Geplant</th>
+                <th style={thStyle}>Gestempelt</th>
+                <th style={thStyle}>Differenz</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyOverview.length === 0 ? (
+                <tr>
+                  <td style={tableCellStyle} colSpan={5}>
+                    Keine Daten gefunden.
+                  </td>
+                </tr>
+              ) : (
+                monthlyOverview.map((item) => (
+                  <tr key={item.employee.id}>
+                    <td style={nameCellStyle}>{item.employee.name}</td>
+                    <td style={tableCellStyle}>{item.employee.employmentType}</td>
+                    <td style={tableCellStyle}>{formatHours(item.plannedMinutes)}</td>
+                    <td style={tableCellStyle}>{formatHours(item.stampedMinutes)}</td>
+                    <td
+                      style={{
+                        ...tableCellStyle,
+                        fontWeight: "bold",
+                        color:
+                          item.difference > 0
+                            ? "#15803d"
+                            : item.difference < 0
+                            ? "#b91c1c"
+                            : "#111",
+                      }}
+                    >
+                      {formatDifference(item.difference)}
+                    </td>
+                  </tr>
+                ))
+              )}
+
+              <tr style={{ background: "#f9fafb" }}>
+                <td style={nameCellStyle}>GESAMT</td>
+                <td style={tableCellStyle}>-</td>
+                <td style={tableCellStyle}>{formatHours(monthlyTotals.planned)}</td>
+                <td style={tableCellStyle}>{formatHours(monthlyTotals.stamped)}</td>
+                <td
+                  style={{
+                    ...tableCellStyle,
+                    fontWeight: "bold",
+                    color:
+                      monthlyTotals.diff > 0
+                        ? "#15803d"
+                        : monthlyTotals.diff < 0
+                        ? "#b91c1c"
+                        : "#111",
+                  }}
+                >
+                  {formatDifference(monthlyTotals.diff)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </>
     );
@@ -2324,221 +2238,40 @@ export default function Home() {
 
     return (
       <>
-        <PageHeader
-          title="Stempelzeiten"
-          subtitle="Live-Übersicht von heute mit direktem Ein- und Ausstempeln"
-          right={
-            <button onClick={exportTimeEntriesCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-          }
-        />
-
-        <div style={dashboardGridStyle}>
-          <InfoCard title="Heute eingestempelt">{activeStampedCount}</InfoCard>
-          <InfoCard title="Heute nicht eingestempelt">
-            {inactiveStampedCount}
-          </InfoCard>
-          <InfoCard title="Dein Status">
-            {clockedIn
-              ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
-              : "Nicht eingestempelt"}
-          </InfoCard>
-          <InfoCard title="Deine Zeit heute">
-            {formatHours(todayStampedMinutes)}
-          </InfoCard>
-        </div>
-
-        <div style={contentPanelStyle}>
-          <h3 style={panelTitleStyle}>Live-Status heute</h3>
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
-                <tr>
-                  <th style={modernThStyle}>Name</th>
-                  <th style={modernThStyle}>Anstellungsart</th>
-                  <th style={modernThStyle}>Status</th>
-                  <th style={modernThStyle}>Kommen</th>
-                  <th style={modernThStyle}>Gehen</th>
-                  <th style={modernThStyle}>Heute</th>
-                  <th style={modernThStyle}>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {liveStampOverview.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={7}>
-                      Keine Mitarbeiter gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  liveStampOverview.map((item) => {
-                    const isOwn = item.employee.id === linkedEmployeeId;
-
-                    return (
-                      <tr key={item.employee.id}>
-                        <td
-                          style={{
-                            ...modernTdStyle,
-                            fontWeight: 700,
-                            color: isOwn ? "#2563eb" : "#111827",
-                          }}
-                        >
-                          {item.employee.name}
-                        </td>
-                        <td style={modernTdStyle}>{item.employee.employmentType}</td>
-                        <td style={modernTdStyle}>
-                          {item.isActive ? (
-                            <span style={statusBadgeGreen}>EINGESTEMPELT</span>
-                          ) : (
-                            <span style={statusBadgeGray}>NICHT EINGESTEMPELT</span>
-                          )}
-                        </td>
-                        <td style={modernTdStyle}>
-                          {item.openEntry?.clockIn || item.firstClockIn}
-                        </td>
-                        <td style={modernTdStyle}>
-                          {item.isActive ? "-" : item.lastClockOut}
-                        </td>
-                        <td style={modernTdStyle}>
-                          {formatHours(item.todayMinutes)}
-                        </td>
-                        <td style={modernTdStyle}>
-                          <div style={actionsWrapStyle}>
-                            {item.isActive ? (
-                              <button
-                                onClick={() =>
-                                  adminMode
-                                    ? handleAdminClockOut(
-                                        item.employee.id,
-                                        item.employee.name
-                                      )
-                                    : isOwn
-                                    ? handleClockOut()
-                                    : undefined
-                                }
-                                style={{
-                                  ...dangerButtonStyle,
-                                  opacity: adminMode || isOwn ? 1 : 0.5,
-                                  cursor:
-                                    adminMode || isOwn ? "pointer" : "not-allowed",
-                                }}
-                                disabled={!adminMode && !isOwn}
-                              >
-                                Ausstempeln
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  adminMode
-                                    ? handleAdminClockIn(
-                                        item.employee.id,
-                                        item.employee.name
-                                      )
-                                    : isOwn
-                                    ? handleClockIn()
-                                    : undefined
-                                }
-                                style={{
-                                  ...primaryActionButtonStyle,
-                                  background: "#16a34a",
-                                  opacity: adminMode || isOwn ? 1 : 0.5,
-                                  cursor:
-                                    adminMode || isOwn ? "pointer" : "not-allowed",
-                                }}
-                                disabled={!adminMode && !isOwn}
-                              >
-                                Einstempeln
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {adminMode ? (
-          <div style={contentPanelStyle}>
-            <h3 style={panelTitleStyle}>Manuelle Korrektur</h3>
-            <div style={filtersBarStyle}>
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Mitarbeiter</label>
-                <select
-                  value={correctionEmployeeId}
-                  onChange={(e) => setCorrectionEmployeeId(e.target.value)}
-                  style={modernInputStyle}
-                >
-                  {employees.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Datum</label>
-                <input
-                  type="date"
-                  value={manualEntryDate}
-                  onChange={(e) => setManualEntryDate(e.target.value)}
-                  style={modernInputStyle}
-                />
-              </div>
-
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Kommen</label>
-                <input
-                  type="time"
-                  value={manualClockIn}
-                  onChange={(e) => setManualClockIn(e.target.value)}
-                  style={modernInputStyle}
-                />
-              </div>
-
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Gehen</label>
-                <input
-                  type="time"
-                  value={manualClockOut}
-                  onChange={(e) => setManualClockOut(e.target.value)}
-                  style={modernInputStyle}
-                />
-              </div>
-
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Grund</label>
-                <input
-                  value={manualReason}
-                  onChange={(e) => setManualReason(e.target.value)}
-                  style={modernInputStyle}
-                />
-              </div>
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Stempelzeiten</h2>
+              <p style={sectionTextStyle}>
+                Alle Stempelzeiten sind sichtbar. Korrekturen kann nur der Admin machen.
+              </p>
             </div>
-
-            <div style={{ marginTop: "16px" }}>
-              <button onClick={addManualTimeEntry} style={primaryActionButtonStyle}>
-                Manuelle Buchung speichern
+            <div style={actionsWrapStyle}>
+              <button onClick={exportTimeEntriesCsv} style={secondaryButtonStyle}>
+                Stempelzeiten Excel/CSV
               </button>
             </div>
           </div>
-        ) : null}
 
-        <div style={contentPanelStyle}>
-          <h3 style={panelTitleStyle}>Historie / Kontrolle</h3>
+          <div style={statsGridStyle}>
+            <StatCard title="Aktueller Status">
+              {clockedIn
+                ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
+                : "Nicht eingestempelt"}
+            </StatCard>
+            <StatCard title="Heute">{formatHours(todayStampedMinutes)}</StatCard>
+            <StatCard title="Dieser Monat">
+              {formatHours(monthStampedMinutes)}
+            </StatCard>
+          </div>
 
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Mitarbeiter anzeigen</label>
+          <div style={filtersGridStyle}>
+            <div>
+              <label style={labelStyle}>Mitarbeiter anzeigen</label>
               <select
                 value={correctionEmployeeId}
                 onChange={(e) => setCorrectionEmployeeId(e.target.value)}
-                style={modernInputStyle}
+                style={inputStyle}
               >
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>
@@ -2549,136 +2282,230 @@ export default function Home() {
             </div>
           </div>
 
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
-                <tr>
-                  <th style={modernThStyle}>Datum</th>
-                  <th style={modernThStyle}>Kommen</th>
-                  <th style={modernThStyle}>Gehen</th>
-                  <th style={modernThStyle}>Minuten</th>
-                  <th style={modernThStyle}>Manuell</th>
-                  <th style={modernThStyle}>Grund</th>
-                  {adminMode ? <th style={modernThStyle}>Aktion</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {displayedTimeEntries.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={adminMode ? 7 : 6}>
-                      Keine Stempelzeiten gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  displayedTimeEntries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="date"
-                            value={entry.entryDate}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                entryDate: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.entryDate
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="time"
-                            value={entry.clockIn}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                clockIn: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.clockIn
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="time"
-                            value={entry.clockOut}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                clockOut: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.clockOut || "-"
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {formatHours(calculateTimeEntryMinutes(entry))}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="checkbox"
-                            checked={entry.manualOverride}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                manualOverride: e.target.checked,
-                              })
-                            }
-                          />
-                        ) : entry.manualOverride ? (
-                          "Ja"
-                        ) : (
-                          "Nein"
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            value={entry.reason}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                reason: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.reason || "-"
-                        )}
-                      </td>
-                      {adminMode ? (
-                        <td style={modernTdStyle}>
-                          <div style={actionsWrapStyle}>
-                            <button
-                              onClick={() => saveTimeEntry(entry)}
-                              style={secondaryActionButtonStyle}
-                            >
-                              Speichern
-                            </button>
-                            <button
-                              onClick={() => deleteTimeEntry(entry.id)}
-                              style={dangerButtonStyle}
-                            >
-                              Löschen
-                            </button>
-                          </div>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+            <button
+              onClick={clockedIn ? handleClockOut : handleClockIn}
+              style={{
+                ...primaryButtonStyle,
+                background: clockedIn ? "#dc2626" : "#16a34a",
+              }}
+            >
+              {clockedIn ? "Ausstempeln" : "Einstempeln"}
+            </button>
           </div>
+        </div>
+
+        {adminMode ? (
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>Manuelle Korrektur</h2>
+
+            <div style={filtersGridStyle}>
+              <div>
+                <label style={labelStyle}>Mitarbeiter</label>
+                <select
+                  value={correctionEmployeeId}
+                  onChange={(e) => setCorrectionEmployeeId(e.target.value)}
+                  style={inputStyle}
+                >
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Datum</label>
+                <input
+                  type="date"
+                  value={manualEntryDate}
+                  onChange={(e) => setManualEntryDate(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Kommen</label>
+                <input
+                  type="time"
+                  value={manualClockIn}
+                  onChange={(e) => setManualClockIn(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Gehen</label>
+                <input
+                  type="time"
+                  value={manualClockOut}
+                  onChange={(e) => setManualClockOut(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Grund</label>
+                <input
+                  value={manualReason}
+                  onChange={(e) => setManualReason(e.target.value)}
+                  placeholder="z. B. Website war offline"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+              <button onClick={addManualTimeEntry} style={primaryButtonStyle}>
+                Manuelle Buchung speichern
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: adminMode ? "1100px" : "800px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Datum</th>
+                <th style={thStyle}>Kommen</th>
+                <th style={thStyle}>Gehen</th>
+                <th style={thStyle}>Minuten</th>
+                <th style={thStyle}>Manuell</th>
+                <th style={thStyle}>Grund</th>
+                {adminMode ? <th style={thStyle}>Aktion</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {displayedTimeEntries.length === 0 ? (
+                <tr>
+                  <td style={tableCellStyle} colSpan={adminMode ? 7 : 6}>
+                    Keine Stempelzeiten gefunden.
+                  </td>
+                </tr>
+              ) : (
+                displayedTimeEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="date"
+                          value={entry.entryDate}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              entryDate: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.entryDate
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="time"
+                          value={entry.clockIn}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              clockIn: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.clockIn
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="time"
+                          value={entry.clockOut}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              clockOut: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.clockOut || "-"
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {formatHours(calculateTimeEntryMinutes(entry))}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="checkbox"
+                          checked={entry.manualOverride}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              manualOverride: e.target.checked,
+                            })
+                          }
+                        />
+                      ) : entry.manualOverride ? (
+                        "Ja"
+                      ) : (
+                        "Nein"
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          value={entry.reason}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              reason: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.reason || "-"
+                      )}
+                    </td>
+
+                    {adminMode ? (
+                      <td style={tableCellStyle}>
+                        <div style={actionsWrapStyle}>
+                          <button
+                            onClick={() => saveTimeEntry(entry)}
+                            style={secondaryButtonStyle}
+                          >
+                            Speichern
+                          </button>
+
+                          <button
+                            onClick={() => deleteTimeEntry(entry.id)}
+                            style={dangerButtonStyle}
+                          >
+                            Löschen
+                          </button>
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </>
     );
@@ -2687,79 +2514,81 @@ export default function Home() {
   function renderMitarbeiter() {
     return (
       <>
-        <PageHeader
-          title="Mitarbeiter"
-          subtitle="Mitarbeiterdaten, Urlaub und Sollstunden verwalten"
-        />
-
         {authRole === "admin" ? (
-          <div style={contentPanelStyle}>
-            <h3 style={panelTitleStyle}>
-              {editingEmployeeId
-                ? "Mitarbeiter bearbeiten"
-                : "Mitarbeiter hinzufügen"}
-            </h3>
+          <div style={sectionStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <h2 style={sectionTitleStyle}>
+                  {editingEmployeeId
+                    ? "Mitarbeiter bearbeiten"
+                    : "Mitarbeiter hinzufügen"}
+                </h2>
+                <p style={sectionTextStyle}>
+                  Hier trägst du den Jahresurlaub und die Sollstunden pro Woche ein.
+                </p>
+              </div>
+            </div>
 
-            <div style={filtersBarStyle}>
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Name</label>
+            <div style={filtersGridStyle}>
+              <div>
+                <label style={labelStyle}>Name</label>
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="Name"
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Anstellungsart</label>
+              <div>
+                <label style={labelStyle}>Anstellungsart</label>
                 <select
                   value={newEmploymentType}
                   onChange={(e) =>
                     setNewEmploymentType(e.target.value as EmploymentType)
                   }
-                  style={modernInputStyle}
+                  style={inputStyle}
                 >
                   <option value="Vollzeit">Vollzeit</option>
                   <option value="Teilzeit">Teilzeit</option>
                   <option value="Minijob">Minijob</option>
                   <option value="Shop Manager">Shop Manager</option>
                   <option value="Praktikant">Praktikant</option>
-                  <option value="Inhaber">Inhaber</option>
                 </select>
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Urlaubstage gesamt</label>
+              <div>
+                <label style={labelStyle}>Urlaubstage gesamt</label>
                 <input
                   value={newVacation}
                   onChange={(e) => setNewVacation(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="z. B. 30"
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Sollstunden pro Woche</label>
+              <div>
+                <label style={labelStyle}>Sollstunden pro Woche</label>
                 <input
                   type="number"
                   step="0.01"
                   value={newWeeklyTarget}
                   onChange={(e) => setNewWeeklyTarget(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="z. B. 40"
+                  style={inputStyle}
                 />
               </div>
             </div>
 
-            <div style={{ ...actionsWrapStyle, marginTop: "16px" }}>
-              <button onClick={addEmployee} style={primaryActionButtonStyle}>
+            <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+              <button onClick={addEmployee} style={primaryButtonStyle}>
                 {editingEmployeeId
                   ? "Mitarbeiter aktualisieren"
                   : "Mitarbeiter speichern"}
               </button>
+
               {editingEmployeeId ? (
-                <button
-                  onClick={resetEmployeeForm}
-                  style={secondaryActionButtonStyle}
-                >
+                <button onClick={resetEmployeeForm} style={secondaryButtonStyle}>
                   Bearbeiten abbrechen
                 </button>
               ) : null}
@@ -2767,25 +2596,26 @@ export default function Home() {
           </div>
         ) : null}
 
-        <div style={contentPanelStyle}>
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Name suchen</label>
+        <div style={sectionStyle}>
+          <div style={filtersGridStyle}>
+            <div>
+              <label style={labelStyle}>Name suchen</label>
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                style={modernInputStyle}
+                placeholder="z. B. Dennis"
+                style={inputStyle}
               />
             </div>
 
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Anstellungsart</label>
+            <div>
+              <label style={labelStyle}>Anstellungsart filtern</label>
               <select
                 value={employmentFilter}
                 onChange={(e) =>
                   setEmploymentFilter(e.target.value as EmploymentFilter)
                 }
-                style={modernInputStyle}
+                style={inputStyle}
               >
                 <option value="Alle">Alle</option>
                 <option value="Vollzeit">Vollzeit</option>
@@ -2793,191 +2623,90 @@ export default function Home() {
                 <option value="Minijob">Minijob</option>
                 <option value="Shop Manager">Shop Manager</option>
                 <option value="Praktikant">Praktikant</option>
-                  <option value="Inhaber">Inhaber</option>
               </select>
             </div>
           </div>
-
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
-                <tr>
-                  <th style={modernThStyle}>Name</th>
-                  <th style={modernThStyle}>Anstellungsart</th>
-                  <th style={modernThStyle}>Urlaub gesamt</th>
-                  <th style={modernThStyle}>Genommen {selectedVacationYear}</th>
-                  <th style={modernThStyle}>Resturlaub {selectedVacationYear}</th>
-                  <th style={modernThStyle}>Soll/Woche</th>
-                  <th style={modernThStyle}>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {weeklyPlanEmployees.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={7}>
-                      Keine Mitarbeiter gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  weeklyPlanEmployees.map((employee) => {
-                    const vacation = vacationSummaryByEmployee[employee.id] || {
-                      total: 0,
-                      used: 0,
-                      remaining: 0,
-                    };
-
-                    return (
-                      <tr key={employee.id}>
-                        <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                          {employee.name}
-                        </td>
-                        <td style={modernTdStyle}>{employee.employmentType}</td>
-                        <td style={modernTdStyle}>{vacation.total}</td>
-                        <td style={modernTdStyle}>{vacation.used}</td>
-                        <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                          {vacation.remaining}
-                        </td>
-                        <td style={modernTdStyle}>{employee.weeklyTargetHours}</td>
-                        <td style={modernTdStyle}>
-                          {authRole === "admin" ? (
-                            <div style={actionsWrapStyle}>
-                              <button
-                                onClick={() => startEditEmployee(employee)}
-                                style={secondaryActionButtonStyle}
-                              >
-                                Bearbeiten
-                              </button>
-                              {employee.name.toLowerCase() === "admin" ? (
-                                <span style={{ color: "#64748b" }}>Admin</span>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    deleteEmployee(employee.id, employee.name)
-                                  }
-                                  style={dangerButtonStyle}
-                                >
-                                  Löschen
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{ color: "#64748b" }}>Nur lesen</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
-      </>
-    );
-  }
 
-  function renderMonatsuebersicht() {
-    return (
-      <>
-        <PageHeader
-          title="Monatsübersicht"
-          subtitle="Geplante und gestempelte Stunden im Monatsvergleich"
-          right={
-            <button onClick={exportMonthCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-          }
-        />
-
-        <div style={contentPanelStyle}>
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Monat</label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                style={modernInputStyle}
-              />
-            </div>
-          </div>
-
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "1200px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Anstellungsart</th>
+                <th style={thStyle}>Urlaub gesamt</th>
+                <th style={thStyle}>Genommen {selectedVacationYear}</th>
+                <th style={thStyle}>Resturlaub {selectedVacationYear}</th>
+                <th style={thStyle}>Soll/Woche</th>
+                <th style={thStyle}>Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.length === 0 ? (
                 <tr>
-                  <th style={modernThStyle}>Name</th>
-                  <th style={modernThStyle}>Anstellungsart</th>
-                  <th style={modernThStyle}>Geplant</th>
-                  <th style={modernThStyle}>Gestempelt</th>
-                  <th style={modernThStyle}>Differenz</th>
+                  <td style={tableCellStyle} colSpan={7}>
+                    Keine Mitarbeiter gefunden.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {monthlyOverview.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={5}>
-                      Keine Daten gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  monthlyOverview.map((item) => (
-                    <tr key={item.employee.id}>
-                      <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                        {item.employee.name}
+              ) : (
+                filteredEmployees.map((employee) => {
+                  const vacation = vacationSummaryByEmployee[employee.id] || {
+                    total: 0,
+                    used: 0,
+                    remaining: 0,
+                  };
+
+                  return (
+                    <tr key={employee.id}>
+                      <td style={nameCellStyle}>{employee.name}</td>
+                      <td style={tableCellStyle}>{employee.employmentType}</td>
+                      <td style={tableCellStyle}>{vacation.total}</td>
+                      <td style={tableCellStyle}>{vacation.used}</td>
+                      <td style={{ ...tableCellStyle, fontWeight: "bold" }}>
+                        {vacation.remaining}
                       </td>
-                      <td style={modernTdStyle}>{item.employee.employmentType}</td>
-                      <td style={modernTdStyle}>
-                        {formatHours(item.plannedMinutes)}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {formatHours(item.stampedMinutes)}
-                      </td>
-                      <td
-                        style={{
-                          ...modernTdStyle,
-                          fontWeight: 700,
-                          color:
-                            item.difference > 0
-                              ? "#15803d"
-                              : item.difference < 0
-                              ? "#dc2626"
-                              : "#111827",
-                        }}
-                      >
-                        {formatDifference(item.difference)}
+                      <td style={tableCellStyle}>{employee.weeklyTargetHours}</td>
+                      <td style={tableCellStyle}>
+                        {authRole === "admin" ? (
+                          <div style={actionsWrapStyle}>
+                            <button
+                              onClick={() => startEditEmployee(employee)}
+                              style={secondaryButtonStyle}
+                            >
+                              Bearbeiten
+                            </button>
+
+                            {employee.name.toLowerCase() === "admin" ? (
+                              <span style={{ color: "#666", alignSelf: "center" }}>
+                                Admin
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() =>
+                                  deleteEmployee(employee.id, employee.name)
+                                }
+                                style={dangerButtonStyle}
+                              >
+                                Löschen
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#666" }}>Nur lesen</span>
+                        )}
                       </td>
                     </tr>
-                  ))
-                )}
-
-                <tr>
-                  <td style={{ ...modernTdStyle, fontWeight: 700 }}>GESAMT</td>
-                  <td style={modernTdStyle}>-</td>
-                  <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                    {formatHours(monthlyTotals.planned)}
-                  </td>
-                  <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                    {formatHours(monthlyTotals.stamped)}
-                  </td>
-                  <td
-                    style={{
-                      ...modernTdStyle,
-                      fontWeight: 700,
-                      color:
-                        monthlyTotals.diff > 0
-                          ? "#15803d"
-                          : monthlyTotals.diff < 0
-                          ? "#dc2626"
-                          : "#111827",
-                    }}
-                  >
-                    {formatDifference(monthlyTotals.diff)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </>
     );
@@ -2994,218 +2723,166 @@ export default function Home() {
   if (!loggedIn) {
     return (
       <main style={loginPageStyle}>
-        <div style={isMobile ? loginShellMobileStyle : loginShellStyle}>
-          <div style={loginBrandBlockStyle}>
-            <div style={loginBrandLogoStyle}>O2</div>
-            <h1 style={loginBrandTitleStyle}>Arbeitszeit Tool</h1>
-            <p style={loginBrandTextStyle}>
-              Modernes Dashboard für Wochenplan, Stempelzeiten und Mitarbeiter.
-            </p>
+        <div style={loginCardStyle}>
+          <div style={eyebrowStyle}>Arbeitszeit Tool</div>
+          <h1 style={{ margin: "8px 0 10px 0", fontSize: "32px", color: "#111" }}>
+            Login
+          </h1>
+          <p style={{ color: "#5f6368", marginBottom: "25px" }}>
+            Mit deiner Supabase-E-Mail und deinem Passwort anmelden.
+          </p>
+
+          <div style={{ marginBottom: "14px" }}>
+            <label style={labelStyle}>E-Mail</label>
+            <input
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              placeholder="name@beispiel.de"
+              style={inputStyle}
+              autoComplete="email"
+            />
           </div>
 
-          <div style={loginCardStyle}>
-            <div style={eyebrowStyle}>Anmeldung</div>
-            <h2 style={loginTitleStyle}>Willkommen zurück</h2>
-            <p style={loginSubTextStyle}>
-              Mit deiner Supabase-E-Mail und deinem Passwort anmelden.
-            </p>
-
-            <div style={{ marginBottom: "14px" }}>
-              <label style={labelStyle}>E-Mail</label>
-              <input
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="name@beispiel.de"
-                style={modernInputStyle}
-                autoComplete="email"
-              />
-            </div>
-
-            <div style={{ marginBottom: "20px" }}>
-              <label style={labelStyle}>Passwort</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Passwort"
-                style={modernInputStyle}
-                autoComplete="current-password"
-              />
-            </div>
-
-            <button onClick={handleLogin} style={loginButtonStyle}>
-              Einloggen
-            </button>
+          <div style={{ marginBottom: "20px" }}>
+            <label style={labelStyle}>Passwort</label>
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="Passwort"
+              style={inputStyle}
+              autoComplete="current-password"
+            />
           </div>
+
+          <button onClick={handleLogin} style={primaryButtonStyle}>
+            Einloggen
+          </button>
         </div>
       </main>
     );
   }
 
-  const sidebarItems: { key: AppTab; label: string }[] = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "wochenplan", label: "Wochenplan" },
-    { key: "stempelzeiten", label: "Stempelzeiten" },
-    { key: "monatsuebersicht", label: "Monatsübersicht" },
-    { key: "mitarbeiter", label: "Mitarbeiter" },
-  ];
-
   return (
-    <main style={isMobile ? appShellMobileStyle : appShellStyle}>
-      {isMobile ? (
-        <div
-          style={{
-            ...mobileOverlayStyle,
-            display: mobileMenuOpen ? "block" : "none",
-          }}
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      ) : null}
-
-      <aside
-        style={
-          isMobile
-            ? {
-                ...sidebarMobileStyle,
-                transform: mobileMenuOpen
-                  ? "translateX(0)"
-                  : "translateX(-110%)",
-              }
-            : sidebarStyle
-        }
-      >
-        <div>
-          <div style={sidebarBrandStyle}>
-            <div style={sidebarBrandLogoStyle}>O2</div>
-            <div>
-              <div style={sidebarBrandTitleStyle}>Arbeitszeit Tool</div>
-              <div style={sidebarBrandSubStyle}>Shop Management</div>
-            </div>
-          </div>
-
-          <div style={sidebarSectionLabelStyle}>Navigation</div>
-
-          <nav style={sidebarNavStyle}>
-            {sidebarItems.map((item) => (
-              <button
-                key={item.key}
-                onClick={() => {
-                  setActiveTab(item.key);
-                  closeMobileMenu();
-                }}
-                style={{
-                  ...sidebarButtonStyle,
-                  background:
-                    activeTab === item.key
-                      ? "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)"
-                      : "transparent",
-                  color: activeTab === item.key ? "#ffffff" : "#cbd5e1",
-                  boxShadow:
-                    activeTab === item.key
-                      ? "0 10px 24px rgba(37,99,235,0.28)"
-                      : "none",
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        <div>
-          <div style={sidebarFooterCardStyle}>
-            <div style={sidebarFooterNameStyle}>
-              {authEmail || "Unbekannt"}
-            </div>
-            <div style={sidebarFooterRoleStyle}>{authRole || "-"}</div>
-          </div>
-
-          <button onClick={handleLogout} style={sidebarLogoutStyle}>
-            Abmelden
-          </button>
-        </div>
-      </aside>
-
-      <section style={isMobile ? mainAreaMobileStyle : mainAreaStyle}>
-        <header style={isMobile ? topHeaderMobileStyle : topHeaderStyle}>
-          {isMobile ? (
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              style={mobileMenuButtonStyle}
-            >
-              ☰ Menü
-            </button>
-          ) : null}
-
+    <main style={pageStyle}>
+      <div style={pageInnerStyle}>
+        <div style={topBarStyle}>
           <div>
-            <div style={topHeaderEyebrowStyle}>Shop Übersicht</div>
-            <h1 style={isMobile ? topHeaderTitleMobileStyle : topHeaderTitleStyle}>
-              {activeTab === "dashboard" && "Dashboard"}
-              {activeTab === "wochenplan" && "Wochenplan"}
-              {activeTab === "stempelzeiten" && "Stempelzeiten"}
-              {activeTab === "mitarbeiter" && "Mitarbeiter"}
-              {activeTab === "monatsuebersicht" && "Monatsübersicht"}
-            </h1>
+            <div style={eyebrowStyle}>Arbeitszeit Tool</div>
+            <h1 style={{ margin: "6px 0 4px 0", color: "#111" }}>Shop Übersicht</h1>
+            <p style={{ margin: 0, color: "#5f6368" }}>
+              Eingeloggt als <strong>{authEmail || "-"}</strong> · Rolle{" "}
+              <strong>{authRole || "-"}</strong>
+            </p>
           </div>
 
-          <div style={isMobile ? topHeaderActionsMobileStyle : topHeaderActionsStyle}>
-            <div style={isMobile ? topHeaderUserCardMobileStyle : topHeaderUserCardStyle}>
-              <div style={topHeaderUserAvatarStyle}>
-                {(authEmail || "U").slice(0, 1).toUpperCase()}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={topHeaderUserNameStyle}>{authEmail || "-"}</div>
-                <div style={topHeaderUserRoleStyle}>{authRole || "-"}</div>
-              </div>
-            </div>
-
+          <div style={actionsWrapStyle}>
             <button
               onClick={clockedIn ? handleClockOut : handleClockIn}
               style={{
-                ...primaryActionButtonStyle,
+                ...primaryButtonStyle,
                 background: clockedIn ? "#dc2626" : "#16a34a",
-                width: isMobile ? "100%" : undefined,
               }}
             >
               {clockedIn ? "Ausstempeln" : "Einstempeln"}
             </button>
-          </div>
-        </header>
 
-        <div style={isMobile ? mainContentMobileStyle : mainContentStyle}>
-          {activeTab === "dashboard" ? renderDashboard() : null}
-          {activeTab === "wochenplan" ? renderWochenplan() : null}
-          {activeTab === "stempelzeiten" ? renderStempelzeiten() : null}
-          {activeTab === "mitarbeiter" ? renderMitarbeiter() : null}
-          {activeTab === "monatsuebersicht" ? renderMonatsuebersicht() : null}
+            <button onClick={handleLogout} style={secondaryButtonStyle}>
+              Abmelden
+            </button>
+          </div>
         </div>
-      </section>
+
+        <div style={tabsBarStyle}>
+          <TabButton
+            active={activeTab === "dashboard"}
+            onClick={() => setActiveTab("dashboard")}
+          >
+            Dashboard
+          </TabButton>
+          <TabButton
+            active={activeTab === "wochenplan"}
+            onClick={() => setActiveTab("wochenplan")}
+          >
+            Wochenplan
+          </TabButton>
+          <TabButton
+            active={activeTab === "monatsuebersicht"}
+            onClick={() => setActiveTab("monatsuebersicht")}
+          >
+            Monatsübersicht
+          </TabButton>
+          <TabButton
+            active={activeTab === "stempelzeiten"}
+            onClick={() => setActiveTab("stempelzeiten")}
+          >
+            Stempelzeiten
+          </TabButton>
+          <TabButton
+            active={activeTab === "mitarbeiter"}
+            onClick={() => setActiveTab("mitarbeiter")}
+          >
+            Mitarbeiter
+          </TabButton>
+        </div>
+
+        {activeTab === "dashboard" ? renderDashboard() : null}
+        {activeTab === "wochenplan" ? renderWochenplan() : null}
+        {activeTab === "monatsuebersicht" ? renderMonatsuebersicht() : null}
+        {activeTab === "stempelzeiten" ? renderStempelzeiten() : null}
+        {activeTab === "mitarbeiter" ? renderMitarbeiter() : null}
+      </div>
     </main>
   );
 }
 
-function PageHeader({
-  title,
-  subtitle,
-  right,
+function TabButton({
+  active,
+  onClick,
+  children,
 }: {
-  title: string;
-  subtitle: string;
-  right?: ReactNode;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
 }) {
   return (
-    <div style={pageHeaderStyle}>
-      <div>
-        <div style={pageHeaderEyebrowStyle}>Bereich</div>
-        <h2 style={pageHeaderTitleStyle}>{title}</h2>
-        <p style={pageHeaderTextStyle}>{subtitle}</p>
-      </div>
-      {right ? <div>{right}</div> : null}
+    <button
+      onClick={onClick}
+      style={{
+        ...tabButtonStyle,
+        background: active ? "#2563eb" : "white",
+        color: active ? "white" : "#111",
+        borderColor: active ? "#2563eb" : "#d6dae1",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function QuickActionCard({
+  title,
+  text,
+  button,
+  onClick,
+}: {
+  title: string;
+  text: string;
+  button: string;
+  onClick: () => void;
+}) {
+  return (
+    <div style={quickActionCardStyle}>
+      <h3 style={{ margin: "0 0 8px 0", color: "#111" }}>{title}</h3>
+      <p style={{ margin: "0 0 16px 0", color: "#5f6368" }}>{text}</p>
+      <button onClick={onClick} style={secondaryButtonStyle}>
+        {button}
+      </button>
     </div>
   );
 }
 
-function InfoCard({
+function StatCard({
   title,
   children,
 }: {
@@ -3213,859 +2890,149 @@ function InfoCard({
   children: ReactNode;
 }) {
   return (
-    <div style={infoCardStyle}>
-      <div style={infoCardLabelStyle}>{title}</div>
-      <div style={infoCardValueStyle}>{children}</div>
+    <div style={statCardStyle}>
+      <div style={{ color: "#6b7280", fontSize: "13px", marginBottom: "8px" }}>
+        {title}
+      </div>
+      <div style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>
+        {children}
+      </div>
     </div>
   );
 }
 
-function QuickActionModern({
-  title,
-  text,
-  onClick,
-}: {
-  title: string;
-  text: string;
-  onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick} style={quickActionCardModernStyle}>
-      <div style={quickActionTitleStyle}>{title}</div>
-      <div style={quickActionTextStyle}>{text}</div>
-    </button>
-  );
-}
-
-const appShellStyle: CSSProperties = {
+const pageStyle: CSSProperties = {
   minHeight: "100vh",
-  background: "#f4f7fb",
-  display: "flex",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
-  color: "#111827",
+  background: "linear-gradient(180deg, #eef4ff 0%, #f7f9fc 100%)",
+  padding: "20px",
+  fontFamily: "Arial, sans-serif",
+  color: "#111",
 };
 
-const appShellMobileStyle: CSSProperties = {
-  minHeight: "100vh",
-  background: "#f4f7fb",
-  display: "block",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
-  color: "#111827",
+const pageInnerStyle: CSSProperties = {
+  maxWidth: "1600px",
+  margin: "0 auto",
 };
 
-const sidebarStyle: CSSProperties = {
-  width: "280px",
-  minWidth: "280px",
-  height: "100vh",
-  position: "sticky",
-  top: 0,
-  background: "linear-gradient(180deg, #0f274d 0%, #0a1c39 100%)",
-  color: "white",
-  padding: "24px 18px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-  boxShadow: "10px 0 30px rgba(15,23,42,0.08)",
-  overflowY: "auto",
-};
-
-const sidebarMobileStyle: CSSProperties = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  width: "280px",
-  height: "100vh",
-  zIndex: 50,
-  background: "linear-gradient(180deg, #0f274d 0%, #0a1c39 100%)",
-  color: "white",
-  padding: "24px 18px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-  boxShadow: "20px 0 50px rgba(15,23,42,0.35)",
-  transition: "transform 0.25s ease",
-  overflowY: "auto",
-};
-
-const mobileOverlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(15,23,42,0.45)",
-  zIndex: 40,
-};
-
-const sidebarBrandStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  marginBottom: "28px",
-};
-
-const sidebarBrandLogoStyle: CSSProperties = {
-  width: "44px",
-  height: "44px",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 800,
-  fontSize: "18px",
-};
-
-const sidebarBrandTitleStyle: CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 700,
-};
-
-const sidebarBrandSubStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#94a3b8",
-};
-
-const sidebarSectionLabelStyle: CSSProperties = {
-  fontSize: "11px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#94a3b8",
-  marginBottom: "12px",
-};
-
-const sidebarNavStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
-const sidebarButtonStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderRadius: "14px",
-  padding: "14px 16px",
-  textAlign: "left",
-  fontWeight: 600,
-  fontSize: "15px",
-  cursor: "pointer",
-};
-
-const sidebarFooterCardStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.08)",
-  borderRadius: "16px",
-  padding: "14px",
-  marginBottom: "12px",
-};
-
-const sidebarFooterNameStyle: CSSProperties = {
-  fontSize: "14px",
-  fontWeight: 700,
-  wordBreak: "break-word",
-};
-
-const sidebarFooterRoleStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#cbd5e1",
-  marginTop: "4px",
-};
-
-const sidebarLogoutStyle: CSSProperties = {
-  width: "100%",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: "14px",
-  padding: "12px 14px",
-  background: "transparent",
-  color: "#ffffff",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const mainAreaStyle: CSSProperties = {
-  flex: 1,
-  display: "flex",
-  flexDirection: "column",
-  minWidth: 0,
-};
-
-const mainAreaMobileStyle: CSSProperties = {
-  width: "100%",
-  display: "flex",
-  flexDirection: "column",
-  minWidth: 0,
-};
-
-const topHeaderStyle: CSSProperties = {
-  background: "#ffffff",
-  borderBottom: "1px solid #e8edf5",
-  padding: "22px 28px",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "20px",
-  flexWrap: "wrap",
-};
-
-const topHeaderMobileStyle: CSSProperties = {
-  background: "#ffffff",
-  borderBottom: "1px solid #e8edf5",
-  padding: "14px 16px",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: "14px",
-};
-
-const mobileMenuButtonStyle: CSSProperties = {
-  border: "1px solid #dbe3ef",
-  borderRadius: "14px",
-  background: "#ffffff",
-  color: "#0f172a",
-  padding: "12px 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-  alignSelf: "flex-start",
-};
-
-const topHeaderEyebrowStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  fontWeight: 700,
-};
-
-const topHeaderTitleStyle: CSSProperties = {
-  margin: "4px 0 0 0",
-  fontSize: "28px",
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const topHeaderTitleMobileStyle: CSSProperties = {
-  margin: "4px 0 0 0",
-  fontSize: "24px",
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const topHeaderActionsStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "14px",
-  flexWrap: "wrap",
-};
-
-const topHeaderActionsMobileStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: "12px",
-};
-
-const topHeaderUserCardStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  padding: "10px 12px",
-  borderRadius: "16px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-};
-
-const topHeaderUserCardMobileStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  padding: "10px 12px",
-  borderRadius: "16px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  overflow: "hidden",
-};
-
-const topHeaderUserAvatarStyle: CSSProperties = {
-  width: "40px",
-  minWidth: "40px",
-  height: "40px",
-  borderRadius: "50%",
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 800,
-};
-
-const topHeaderUserNameStyle: CSSProperties = {
-  fontSize: "14px",
-  fontWeight: 700,
-  color: "#0f172a",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const topHeaderUserRoleStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-};
-
-const mainContentStyle: CSSProperties = {
-  padding: "28px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "20px",
-};
-
-const mainContentMobileStyle: CSSProperties = {
-  padding: "14px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "16px",
-};
-
-const pageHeaderStyle: CSSProperties = {
-  background: "#ffffff",
+const topBarStyle: CSSProperties = {
+  background: "white",
   borderRadius: "24px",
   padding: "24px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
+  marginBottom: "18px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "20px",
+  flexWrap: "wrap",
+};
+
+const tabsBarStyle: CSSProperties = {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  marginBottom: "20px",
+};
+
+const tabButtonStyle: CSSProperties = {
+  padding: "12px 16px",
+  borderRadius: "999px",
+  border: "1px solid #d6dae1",
+  background: "white",
+  cursor: "pointer",
+  fontWeight: "bold",
+  boxShadow: "0 4px 12px rgba(15,23,42,0.05)",
+};
+
+const sectionStyle: CSSProperties = {
+  background: "white",
+  borderRadius: "24px",
+  padding: "22px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+  marginBottom: "20px",
+};
+
+const sectionHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "flex-start",
   gap: "16px",
   flexWrap: "wrap",
+  marginBottom: "16px",
 };
 
-const pageHeaderEyebrowStyle: CSSProperties = {
-  fontSize: "11px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#64748b",
-  fontWeight: 700,
-  marginBottom: "6px",
-};
-
-const pageHeaderTitleStyle: CSSProperties = {
+const sectionTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: "28px",
-  color: "#0f172a",
-};
-
-const pageHeaderTextStyle: CSSProperties = {
-  margin: "8px 0 0 0",
-  color: "#64748b",
-};
-
-const contentPanelStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "24px",
-  padding: "24px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-};
-
-const warningBannerStyle: CSSProperties = {
-  background: "#fff7ed",
-  color: "#9a3412",
-  border: "1px solid #fdba74",
-  borderRadius: "18px",
-  padding: "14px 16px",
-};
-
-const modernHeroStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 70%)",
-  borderRadius: "26px",
-  padding: "26px",
-  border: "1px solid #dbeafe",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "18px",
-  flexWrap: "wrap",
-};
-
-const modernHeroMobileStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 70%)",
-  borderRadius: "24px",
-  padding: "20px",
-  border: "1px solid #dbeafe",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: "18px",
-};
-
-const modernHeroEyebrowStyle: CSSProperties = {
-  fontSize: "12px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#2563eb",
-  fontWeight: 800,
-};
-
-const modernHeroTitleStyle: CSSProperties = {
-  fontSize: "34px",
-  margin: "6px 0 8px 0",
-  color: "#0f172a",
-};
-
-const modernHeroTitleMobileStyle: CSSProperties = {
-  fontSize: "28px",
-  margin: "6px 0 8px 0",
-  color: "#0f172a",
-};
-
-const modernHeroTextStyle: CSSProperties = {
-  margin: 0,
-  color: "#475569",
-  maxWidth: "700px",
-};
-
-const heroButtonWrapStyle: CSSProperties = {
-  display: "flex",
-  gap: "12px",
-  flexWrap: "wrap",
-};
-
-const dashboardGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "16px",
-};
-
-const infoCardStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "22px",
-  padding: "22px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-};
-
-const infoCardLabelStyle: CSSProperties = {
-  fontSize: "13px",
-  color: "#64748b",
-  marginBottom: "10px",
-};
-
-const infoCardValueStyle: CSSProperties = {
   fontSize: "24px",
-  fontWeight: 800,
-  color: "#0f172a",
+  color: "#111",
 };
 
-const quickActionsGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-  gap: "16px",
+const sectionTextStyle: CSSProperties = {
+  margin: "6px 0 0 0",
+  color: "#5f6368",
 };
 
-const quickActionCardModernStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "22px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-  padding: "20px",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const quickActionTitleStyle: CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 800,
-  color: "#0f172a",
-  marginBottom: "8px",
-};
-
-const quickActionTextStyle: CSSProperties = {
-  color: "#64748b",
-  fontSize: "14px",
-};
-
-const primaryActionButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-  color: "#ffffff",
-  padding: "12px 18px",
-  fontWeight: 700,
-  cursor: "pointer",
-  boxShadow: "0 10px 24px rgba(37,99,235,0.22)",
-};
-
-const secondaryActionButtonStyle: CSSProperties = {
-  border: "1px solid #dbe3ef",
-  borderRadius: "14px",
-  background: "#ffffff",
-  color: "#0f172a",
-  padding: "12px 18px",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const filtersBarStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "14px",
-  marginBottom: "18px",
-};
-
-const filterBoxStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
-const filterLabelStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-};
-
-const modernInputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "13px 14px",
-  borderRadius: "14px",
-  border: "1px solid #dbe3ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: "15px",
-};
-
-const filterInfoStyle: CSSProperties = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: "18px",
-  padding: "14px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-};
-
-const filterInfoTitleStyle: CSSProperties = {
-  fontSize: "11px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#64748b",
-  fontWeight: 800,
-};
-
-const filterInfoValueStyle: CSSProperties = {
-  fontSize: "20px",
-  fontWeight: 800,
-  color: "#0f172a",
-  marginTop: "6px",
-};
-
-const filterInfoSubStyle: CSSProperties = {
-  fontSize: "13px",
-  color: "#64748b",
-  marginTop: "4px",
-};
-
-const employeeBlockStyle: CSSProperties = {
+const heroCardStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 70%)",
   borderRadius: "24px",
-  padding: "20px",
-  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
-};
-
-const employeeBlockHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "16px",
-  flexWrap: "wrap",
-  marginBottom: "18px",
-};
-
-const employeeNameModernStyle: CSSProperties = {
-  fontSize: "22px",
-  fontWeight: 800,
-};
-
-const employeeSubInfoStyle: CSSProperties = {
-  fontSize: "13px",
-  color: "#64748b",
-  marginTop: "4px",
-};
-
-const summaryChipWrapStyle: CSSProperties = {
-  display: "flex",
-  gap: "10px",
-  flexWrap: "wrap",
-  alignItems: "stretch",
-};
-
-const summaryChipStyle: CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: "16px",
-  padding: "10px 14px",
-  minWidth: "100px",
-};
-
-const summaryChipLabelStyle: CSSProperties = {
-  fontSize: "11px",
-  color: "#64748b",
-  textTransform: "uppercase",
-  fontWeight: 700,
-  marginBottom: "4px",
-};
-
-const summaryChipValueStyle: CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const dayGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "12px",
-};
-
-const dayGridMobileStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: "12px",
-};
-
-const cardTopRowStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "10px",
-  marginBottom: "8px",
-};
-
-const dayCardTitleStyle: CSSProperties = {
-  fontSize: "14px",
-  fontWeight: 800,
-  color: "#111827",
-};
-
-const dayCardDateStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-};
-
-const statusPillStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "4px 8px",
-  borderRadius: "999px",
-  fontWeight: 800,
-  fontSize: "11px",
-  marginBottom: "10px",
-};
-
-const specialLabelStyle: CSSProperties = {
-  fontSize: "11px",
-  fontWeight: 700,
-  color: "#b91c1c",
-  marginBottom: "8px",
-};
-
-const timeBigStyle: CSSProperties = {
-  fontSize: "16px",
-  fontWeight: 800,
-  color: "#111827",
-  marginBottom: "6px",
-};
-
-const subInfoStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#475569",
-  marginBottom: "8px",
-};
-
-const noteTextStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#475569",
-};
-
-const notePlaceholderStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#94a3b8",
-};
-
-const panelTitleStyle: CSSProperties = {
-  margin: "0 0 16px 0",
-  fontSize: "22px",
-  color: "#0f172a",
-};
-
-const tableShellStyle: CSSProperties = {
-  overflowX: "auto",
-};
-
-const modernTableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  minWidth: "920px",
-};
-
-const modernThStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "14px 16px",
-  background: "#f8fafc",
-  color: "#475569",
-  fontSize: "13px",
-  fontWeight: 800,
-  borderBottom: "1px solid #e2e8f0",
-};
-
-const modernTdStyle: CSSProperties = {
-  padding: "14px 16px",
-  borderBottom: "1px solid #eef2f7",
-  color: "#111827",
-  fontSize: "14px",
-  verticalAlign: "middle",
-};
-
-const emptyStateStyle: CSSProperties = {
   padding: "28px",
-  borderRadius: "20px",
-  background: "#ffffff",
-  border: "1px dashed #cbd5e1",
-  color: "#64748b",
-};
-
-const loginPageStyle: CSSProperties = {
-  minHeight: "100vh",
-  background: "linear-gradient(135deg, #eaf2ff 0%, #f8fbff 100%)",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+  marginBottom: "20px",
   display: "flex",
+  justifyContent: "space-between",
   alignItems: "center",
-  justifyContent: "center",
-  padding: "24px",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
+  gap: "20px",
+  flexWrap: "wrap",
 };
 
-const loginShellStyle: CSSProperties = {
-  width: "100%",
-  maxWidth: "1080px",
-  display: "grid",
-  gridTemplateColumns: "1fr 480px",
-  gap: "24px",
-  alignItems: "stretch",
-};
-
-const loginShellMobileStyle: CSSProperties = {
-  width: "100%",
-  maxWidth: "520px",
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: "18px",
-  alignItems: "stretch",
-};
-
-const loginBrandBlockStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #0f274d 0%, #153869 100%)",
-  borderRadius: "32px",
-  color: "#ffffff",
-  padding: "36px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-  boxShadow: "0 20px 50px rgba(15,39,77,0.22)",
-};
-
-const loginBrandLogoStyle: CSSProperties = {
-  width: "64px",
-  height: "64px",
+const warningCardStyle: CSSProperties = {
+  background: "#fff7ed",
+  border: "1px solid #fdba74",
+  color: "#9a3412",
   borderRadius: "18px",
-  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 800,
-  fontSize: "24px",
-  marginBottom: "18px",
+  padding: "16px 18px",
+  marginBottom: "20px",
 };
 
-const loginBrandTitleStyle: CSSProperties = {
-  fontSize: "38px",
-  fontWeight: 800,
-  margin: "0 0 10px 0",
+const eyebrowStyle: CSSProperties = {
+  color: "#2563eb",
+  fontWeight: "bold",
+  fontSize: "13px",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
 };
 
-const loginBrandTextStyle: CSSProperties = {
-  margin: 0,
-  color: "#cbd5e1",
-  fontSize: "16px",
-  lineHeight: 1.6,
-  maxWidth: "420px",
+const statsGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "15px",
+  marginBottom: "20px",
 };
 
-const loginCardStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "32px",
-  padding: "34px",
-  boxShadow: "0 20px 50px rgba(15,23,42,0.10)",
-  border: "1px solid #e8edf5",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
+const statCardStyle: CSSProperties = {
+  background: "white",
+  borderRadius: "22px",
+  padding: "20px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
 };
 
-const loginTitleStyle: CSSProperties = {
-  fontSize: "30px",
-  color: "#0f172a",
-  margin: "6px 0 10px 0",
+const dashboardActionsGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: "16px",
 };
 
-const loginSubTextStyle: CSSProperties = {
-  color: "#64748b",
-  margin: "0 0 24px 0",
+const quickActionCardStyle: CSSProperties = {
+  background: "white",
+  borderRadius: "22px",
+  padding: "20px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
 };
 
-const loginButtonStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-  color: "#ffffff",
-  padding: "14px 18px",
-  fontWeight: 800,
-  cursor: "pointer",
-  boxShadow: "0 10px 24px rgba(37,99,235,0.22)",
-};
-
-const loadingPageStyle: CSSProperties = {
-  minHeight: "100vh",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  background: "#f4f7fb",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
-};
-
-const loadingCardStyle: CSSProperties = {
-  background: "#ffffff",
-  padding: "24px 30px",
-  borderRadius: "20px",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.08)",
-};
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: "8px",
-  fontWeight: 700,
-  color: "#334155",
-};
-
-const smallInputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 10px",
-  borderRadius: "10px",
-  border: "1px solid #dbe3ef",
-  fontSize: "12px",
-  background: "#fff",
-  color: "#111827",
-  marginBottom: "6px",
+const filtersGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "12px",
 };
 
 const actionsWrapStyle: CSSProperties = {
@@ -4074,12 +3041,52 @@ const actionsWrapStyle: CSSProperties = {
   flexWrap: "wrap",
 };
 
-const eyebrowStyle: CSSProperties = {
-  color: "#2563eb",
-  fontWeight: 800,
+const labelStyle: CSSProperties = {
+  display: "block",
+  marginBottom: "8px",
+  fontWeight: "bold",
+  color: "#111",
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px",
+  borderRadius: "14px",
+  border: "1px solid #d6dae1",
+  fontSize: "16px",
+  background: "#fff",
+  color: "#111",
+};
+
+const smallInputStyle: CSSProperties = {
+  width: "100%",
+  padding: "6px",
+  borderRadius: "10px",
+  border: "1px solid #d6dae1",
   fontSize: "12px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
+  background: "#fff",
+  color: "#111",
+  marginBottom: "6px",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  padding: "11px 16px",
+  borderRadius: "12px",
+  border: "none",
+  background: "#2563eb",
+  color: "white",
+  fontWeight: "bold",
+  cursor: "pointer",
+  boxShadow: "0 8px 20px rgba(37,99,235,0.25)",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "11px 16px",
+  borderRadius: "12px",
+  border: "1px solid #d6dae1",
+  background: "white",
+  color: "#111",
+  cursor: "pointer",
 };
 
 const dangerButtonStyle: CSSProperties = {
@@ -4089,7 +3096,94 @@ const dangerButtonStyle: CSSProperties = {
   background: "#dc2626",
   color: "white",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: "bold",
+};
+
+const thStyle: CSSProperties = {
+  textAlign: "center",
+  padding: "12px",
+  border: "1px solid #d6dae1",
+  color: "#111",
+  fontWeight: "bold",
+  background: "#f3f4f6",
+};
+
+const nameCellStyle: CSSProperties = {
+  padding: "12px",
+  border: "1px solid #d6dae1",
+  fontWeight: "bold",
+  background: "#fff",
+  minWidth: "140px",
+};
+
+const tableCellStyle: CSSProperties = {
+  padding: "8px",
+  border: "1px solid #d6dae1",
+  textAlign: "center",
+  verticalAlign: "middle",
+};
+
+const editCellStyle: CSSProperties = {
+  padding: "8px",
+  border: "1px solid #d6dae1",
+  verticalAlign: "top",
+  minWidth: "180px",
+  background: "#fff",
+};
+
+const hoursCellStyle: CSSProperties = {
+  padding: "12px",
+  border: "1px solid #d6dae1",
+  textAlign: "center",
+  fontWeight: "bold",
+  background: "#f9fafb",
+  minWidth: "90px",
+};
+
+const loadingPageStyle: CSSProperties = {
+  minHeight: "100vh",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  background: "linear-gradient(180deg, #eef4ff 0%, #f7f9fc 100%)",
+  fontFamily: "Arial, sans-serif",
+};
+
+const loadingCardStyle: CSSProperties = {
+  background: "white",
+  padding: "24px 30px",
+  borderRadius: "20px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+};
+
+const loginPageStyle: CSSProperties = {
+  minHeight: "100vh",
+  background: "linear-gradient(180deg, #eef4ff 0%, #f7f9fc 100%)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  padding: "20px",
+  fontFamily: "Arial, sans-serif",
+  color: "#111",
+};
+
+const loginCardStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: "460px",
+  background: "white",
+  borderRadius: "28px",
+  padding: "34px",
+  boxShadow: "0 18px 44px rgba(15,23,42,0.12)",
+};
+
+const statusBadgeBlue: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  fontWeight: "bold",
+  fontSize: "12px",
 };
 
 const statusBadgeGray: CSSProperties = {
@@ -4098,7 +3192,7 @@ const statusBadgeGray: CSSProperties = {
   borderRadius: "999px",
   background: "#e5e7eb",
   color: "#374151",
-  fontWeight: 800,
+  fontWeight: "bold",
   fontSize: "12px",
 };
 
@@ -4108,6 +3202,36 @@ const statusBadgeGreen: CSSProperties = {
   borderRadius: "999px",
   background: "#dcfce7",
   color: "#15803d",
-  fontWeight: 800,
+  fontWeight: "bold",
+  fontSize: "12px",
+};
+
+const statusBadgeOrange: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#ffedd5",
+  color: "#c2410c",
+  fontWeight: "bold",
+  fontSize: "12px",
+};
+
+const statusBadgeYellow: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#fef3c7",
+  color: "#a16207",
+  fontWeight: "bold",
+  fontSize: "12px",
+};
+
+const statusBadgeRed: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#fee2e2",
+  color: "#b91c1c",
+  fontWeight: "bold",
   fontSize: "12px",
 };
