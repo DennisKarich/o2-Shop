@@ -109,6 +109,13 @@ const dayOrder: DayKey[] = [
   "sunday",
 ];
 
+function toIsoDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function getCurrentMondayIso() {
   const now = new Date();
   const day = now.getDay();
@@ -134,13 +141,6 @@ function getCurrentMonthPrefix() {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
-}
-
-function toIsoDate(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 function shiftIsoDate(isoDate: string, days: number) {
@@ -199,17 +199,14 @@ function getBWHolidayMap(year: number) {
 function getHolidayName(dateIso: string) {
   if (!dateIso) return null;
   const year = Number(dateIso.slice(0, 4));
-  const holidays = getBWHolidayMap(year);
-  return holidays[dateIso] ?? null;
+  return getBWHolidayMap(year)[dateIso] ?? null;
 }
 
 function getSpecialDayLabel(dateIso: string, day: DayKey) {
   const holidayName = getHolidayName(dateIso);
   const isSunday = day === "sunday";
 
-  if (holidayName && isSunday) {
-    return `${holidayName} / Sonntag`;
-  }
+  if (holidayName && isSunday) return `${holidayName} / Sonntag`;
   if (holidayName) return holidayName;
   if (isSunday) return "Sonntag";
   return "";
@@ -311,144 +308,6 @@ export default function Home() {
     setLinkedEmployeeId(null);
   }
 
-  useEffect(() => {
-    let active = true;
-
-    const init = async () => {
-      setLoading(true);
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!active) return;
-
-      if (session) {
-        setLoggedIn(true);
-        setAuthEmail(session.user.email ?? "");
-        await loadAuthProfile(session.user.id);
-        await loadEverything();
-      } else {
-        clearAuthState();
-      }
-
-      if (active) setLoading(false);
-    };
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!active) return;
-
-      if (session) {
-        setLoading(true);
-        setLoggedIn(true);
-        setAuthEmail(session.user.email ?? "");
-        await loadAuthProfile(session.user.id);
-        await loadEverything();
-        if (active) setLoading(false);
-      } else {
-        clearAuthState();
-        if (active) setLoading(false);
-      }
-    });
-
-    init();
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (employees.length > 0 && !correctionEmployeeId) {
-      setCorrectionEmployeeId(employees[0].id);
-    }
-  }, [employees, correctionEmployeeId]);
-
-  useEffect(() => {
-    const next: Record<string, WeeklyEdit> = {};
-
-    for (const employee of employees) {
-      for (const day of dayOrder) {
-        const dateIso = getShiftDateIso(weekStart, day);
-
-        const shift = shifts.find(
-          (item) =>
-            item.employeeId === employee.id &&
-            item.weekStart === weekStart &&
-            item.day === day
-        );
-
-        next[getCellKey(employee.id, day)] = shift
-          ? {
-              status: shift.status,
-              start: shift.start || "10:00",
-              end: shift.end || "18:00",
-              location: shift.location || "PF",
-              note: shift.note || "",
-            }
-          : getDefaultEditForDate(dateIso, day);
-      }
-    }
-
-    setWeeklyEdits(next);
-  }, [employees, shifts, weekStart]);
-
-  async function loadEverything() {
-    await loadEmployees();
-    await loadShifts();
-    await loadTimeEntries();
-  }
-
-  async function loadAuthProfile(userId: string) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("app_role, employee_id")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (error) {
-      alert("Fehler beim Laden des Profils: " + error.message);
-      setAuthRole(null);
-      setLinkedEmployeeId(null);
-      return;
-    }
-
-    setAuthRole(data?.app_role === "admin" ? "admin" : "mitarbeiter");
-    setLinkedEmployeeId(data?.employee_id ? String(data.employee_id) : null);
-  }
-
-  async function handleLogin() {
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      alert("Bitte E-Mail und Passwort eingeben.");
-      return;
-    }
-
-    setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: loginEmail.trim(),
-      password: loginPassword,
-    });
-
-    setLoading(false);
-
-    if (error) {
-      alert("Login fehlgeschlagen: " + error.message);
-      return;
-    }
-
-    setLoginPassword("");
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    clearAuthState();
-    setActiveTab("dashboard");
-  }
-
   function mapEmploymentType(value: string): EmploymentType {
     if (value === "Teilzeit") return "Teilzeit";
     if (value === "Minijob") return "Minijob";
@@ -512,7 +371,7 @@ export default function Home() {
       .order("id", { ascending: true });
 
     if (error) {
-      alert("Fehler beim Laden der Mitarbeiter: " + error.message);
+      console.error("Fehler beim Laden der Mitarbeiter:", error);
       return;
     }
 
@@ -526,7 +385,7 @@ export default function Home() {
       .order("id", { ascending: true });
 
     if (error) {
-      alert("Fehler beim Laden der Schichten: " + error.message);
+      console.error("Fehler beim Laden der Schichten:", error);
       return;
     }
 
@@ -541,11 +400,176 @@ export default function Home() {
       .order("id", { ascending: false });
 
     if (error) {
-      alert("Fehler beim Laden der Stempelzeiten: " + error.message);
+      console.error("Fehler beim Laden der Stempelzeiten:", error);
       return;
     }
 
     setTimeEntries((data ?? []).map(mapTimeEntryRow));
+  }
+
+  async function loadEverything() {
+    await loadEmployees();
+    await loadShifts();
+    await loadTimeEntries();
+  }
+
+  async function loadAuthProfile(userId: string) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("app_role, employee_id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Fehler beim Laden des Profils:", error);
+      setAuthRole(null);
+      setLinkedEmployeeId(null);
+      return;
+    }
+
+    setAuthRole(data?.app_role === "admin" ? "admin" : "mitarbeiter");
+    setLinkedEmployeeId(data?.employee_id ? String(data.employee_id) : null);
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    const init = async () => {
+      try {
+        setLoading(true);
+
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) throw error;
+        if (!active) return;
+
+        if (session?.user) {
+          setLoggedIn(true);
+          setAuthEmail(session.user.email ?? "");
+          await loadAuthProfile(session.user.id);
+          await loadEverything();
+        } else {
+          clearAuthState();
+        }
+      } catch (error) {
+        console.error("Init-Fehler:", error);
+        clearAuthState();
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    init();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (employees.length > 0 && !correctionEmployeeId) {
+      setCorrectionEmployeeId(employees[0].id);
+    }
+  }, [employees, correctionEmployeeId]);
+
+  useEffect(() => {
+    const next: Record<string, WeeklyEdit> = {};
+
+    for (const employee of employees) {
+      for (const day of dayOrder) {
+        const dateIso = getShiftDateIso(weekStart, day);
+
+        const shift = shifts.find(
+          (item) =>
+            item.employeeId === employee.id &&
+            item.weekStart === weekStart &&
+            item.day === day
+        );
+
+        next[getCellKey(employee.id, day)] = shift
+          ? {
+              status: shift.status,
+              start: shift.start || "10:00",
+              end: shift.end || "18:00",
+              location: shift.location || "PF",
+              note: shift.note || "",
+            }
+          : getDefaultEditForDate(dateIso, day);
+      }
+    }
+
+    setWeeklyEdits(next);
+  }, [employees, shifts, weekStart]);
+
+  function getCellKey(employeeId: string, day: DayKey) {
+    return `${employeeId}_${day}`;
+  }
+
+  function updateCell(
+    employeeId: string,
+    day: DayKey,
+    patch: Partial<WeeklyEdit>
+  ) {
+    const key = getCellKey(employeeId, day);
+
+    setWeeklyEdits((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] ?? emptyEdit()),
+        ...patch,
+      },
+    }));
+  }
+
+  function isAushilfe(employeeId: string) {
+    const employee = employees.find((e) => e.id === employeeId);
+    return employee?.employmentType === "Minijob";
+  }
+
+  async function handleLogin() {
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      alert("Bitte E-Mail und Passwort eingeben.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+
+      if (error) {
+        alert("Login fehlgeschlagen: " + error.message);
+        return;
+      }
+
+      if (data.session?.user) {
+        setLoggedIn(true);
+        setAuthEmail(data.session.user.email ?? "");
+        await loadAuthProfile(data.session.user.id);
+        await loadEverything();
+      }
+
+      setLoginPassword("");
+      setActiveTab("dashboard");
+    } catch (error) {
+      console.error("Login-Fehler:", error);
+      alert("Beim Login ist ein Fehler aufgetreten.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    clearAuthState();
+    setActiveTab("dashboard");
+    setLoading(false);
   }
 
   async function addEmployee() {
@@ -623,13 +647,6 @@ export default function Home() {
       return;
     }
 
-    const employee = employees.find((e) => e.id === employeeId);
-
-    if (!employee) {
-      alert("Mitarbeiter nicht gefunden.");
-      return;
-    }
-
     if (employeeName.toLowerCase() === "admin") {
       alert("Das Admin-Konto kann hier nicht gelöscht werden.");
       return;
@@ -639,9 +656,7 @@ export default function Home() {
       `Mitarbeiter "${employeeName}" wirklich löschen?`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     const { error: deleteShiftsError } = await supabase
       .from("shifts")
@@ -681,26 +696,6 @@ export default function Home() {
     await loadShifts();
     await loadTimeEntries();
     alert("Mitarbeiter gelöscht.");
-  }
-
-  function getCellKey(employeeId: string, day: DayKey) {
-    return `${employeeId}_${day}`;
-  }
-
-  function updateCell(
-    employeeId: string,
-    day: DayKey,
-    patch: Partial<WeeklyEdit>
-  ) {
-    const key = getCellKey(employeeId, day);
-
-    setWeeklyEdits((prev) => ({
-      ...prev,
-      [key]: {
-        ...(prev[key] ?? emptyEdit()),
-        ...patch,
-      },
-    }));
   }
 
   async function saveEmployeeWeek(employeeId: string, silent = false) {
@@ -743,7 +738,7 @@ export default function Home() {
         {
           employee_id: Number(employeeId),
           week_start: weekStart,
-          day: day,
+          day,
           status: edit.status,
           start_time: edit.status === "ARBEIT" ? edit.start : "",
           end_time: edit.status === "ARBEIT" ? edit.end : "",
@@ -779,9 +774,7 @@ export default function Home() {
 
     for (const employee of filteredEmployees) {
       const ok = await saveEmployeeWeek(employee.id, true);
-      if (!ok) {
-        return;
-      }
+      if (!ok) return;
     }
 
     await loadShifts();
@@ -966,7 +959,11 @@ export default function Home() {
     if (!shift) return 0;
 
     if (shift.status === "FEIERTAG") {
-      return FEIERTAG_MINUTES;
+      return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
+    }
+
+    if (shift.status === "URLAUB") {
+      return 0;
     }
 
     if (shift.status !== "ARBEIT") return 0;
@@ -977,7 +974,6 @@ export default function Home() {
     const rawMinutes = Math.max(0, end - start);
 
     let pause = 0;
-
     if (rawMinutes > 360) {
       const alone = isAloneAtLocationPreview(shift);
       pause = alone ? 0 : 30;
@@ -990,7 +986,11 @@ export default function Home() {
     if (!shift) return 0;
 
     if (shift.status === "FEIERTAG") {
-      return FEIERTAG_MINUTES;
+      return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
+    }
+
+    if (shift.status === "URLAUB") {
+      return 0;
     }
 
     if (shift.status !== "ARBEIT") return 0;
@@ -1001,7 +1001,6 @@ export default function Home() {
     const rawMinutes = Math.max(0, end - start);
 
     let pause = 0;
-
     if (rawMinutes > 360) {
       const alone = isAloneAtLocationStored(shift);
       pause = alone ? 0 : 30;
@@ -1194,64 +1193,6 @@ export default function Home() {
       .reduce((sum, entry) => sum + calculateTimeEntryMinutes(entry), 0);
   }, [timeEntries, currentEmployee?.id]);
 
-  async function handleClockIn() {
-    if (!currentEmployee?.id) {
-      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
-      return;
-    }
-
-    if (openTimeEntry) {
-      alert("Du bist bereits eingestempelt.");
-      return;
-    }
-
-    const { error } = await supabase.from("time_entries").insert([
-      {
-        employee_id: Number(currentEmployee.id),
-        entry_date: todayIso,
-        clock_in: getCurrentTimeHHMM(),
-        clock_out: "",
-        manual_override: false,
-        reason: "",
-      },
-    ]);
-
-    if (error) {
-      alert("Fehler beim Einstempeln: " + error.message);
-      return;
-    }
-
-    await loadTimeEntries();
-    alert("Eingestempelt.");
-  }
-
-  async function handleClockOut() {
-    if (!currentEmployee?.id) {
-      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
-      return;
-    }
-
-    if (!openTimeEntry) {
-      alert("Du bist nicht eingestempelt.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("time_entries")
-      .update({
-        clock_out: getCurrentTimeHHMM(),
-      })
-      .eq("id", openTimeEntry.id);
-
-    if (error) {
-      alert("Fehler beim Ausstempeln: " + error.message);
-      return;
-    }
-
-    await loadTimeEntries();
-    alert("Ausgestempelt.");
-  }
-
   function updateTimeEntryLocal(id: number, patch: Partial<TimeEntry>) {
     setTimeEntries((prev) =>
       prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
@@ -1347,6 +1288,64 @@ export default function Home() {
     if (!correctionEmployeeId) return [];
     return timeEntries.filter((entry) => entry.employeeId === correctionEmployeeId);
   }, [timeEntries, correctionEmployeeId]);
+
+  async function handleClockIn() {
+    if (!currentEmployee?.id) {
+      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
+      return;
+    }
+
+    if (openTimeEntry) {
+      alert("Du bist bereits eingestempelt.");
+      return;
+    }
+
+    const { error } = await supabase.from("time_entries").insert([
+      {
+        employee_id: Number(currentEmployee.id),
+        entry_date: todayIso,
+        clock_in: getCurrentTimeHHMM(),
+        clock_out: "",
+        manual_override: false,
+        reason: "",
+      },
+    ]);
+
+    if (error) {
+      alert("Fehler beim Einstempeln: " + error.message);
+      return;
+    }
+
+    await loadTimeEntries();
+    alert("Eingestempelt.");
+  }
+
+  async function handleClockOut() {
+    if (!currentEmployee?.id) {
+      alert("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
+      return;
+    }
+
+    if (!openTimeEntry) {
+      alert("Du bist nicht eingestempelt.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("time_entries")
+      .update({
+        clock_out: getCurrentTimeHHMM(),
+      })
+      .eq("id", openTimeEntry.id);
+
+    if (error) {
+      alert("Fehler beim Ausstempeln: " + error.message);
+      return;
+    }
+
+    await loadTimeEntries();
+    alert("Ausgestempelt.");
+  }
 
   function getCellExportText(employeeId: string, day: DayKey) {
     const edit = weeklyEdits[getCellKey(employeeId, day)] ?? emptyEdit();
@@ -1639,7 +1638,10 @@ export default function Home() {
             <button onClick={() => setActiveTab("wochenplan")} style={primaryButtonStyle}>
               Zum Wochenplan
             </button>
-            <button onClick={() => setActiveTab("monatsuebersicht")} style={secondaryButtonStyle}>
+            <button
+              onClick={() => setActiveTab("monatsuebersicht")}
+              style={secondaryButtonStyle}
+            >
               Monatsübersicht
             </button>
           </div>
@@ -1647,8 +1649,8 @@ export default function Home() {
 
         {!currentEmployee ? (
           <div style={warningCardStyle}>
-            Dein Login ist noch keinem Mitarbeiter zugeordnet.  
-            Alles ansehen geht trotzdem, aber Ein- und Ausstempeln geht erst nach der Verknüpfung.
+            Dein Login ist noch keinem Mitarbeiter zugeordnet. Alles ansehen geht
+            trotzdem, aber Ein- und Ausstempeln geht erst nach der Verknüpfung.
           </div>
         ) : null}
 
@@ -1733,8 +1735,8 @@ export default function Home() {
               <h2 style={sectionTitleStyle}>Wochenplan</h2>
               <p style={sectionTextStyle}>
                 Sonntag steht automatisch auf FREI. Feiertage werden automatisch
-                als FEIERTAG markiert. FEIERTAG zählt intern mit 6,67 Stunden.
-                URLAUB zählt automatisch für den Resturlaub.
+                als FEIERTAG markiert. Feiertag zählt 6,67 Stunden, aber bei
+                Aushilfen/Minijob 0 Stunden. Urlaub zählt 0 Stunden.
               </p>
             </div>
 
