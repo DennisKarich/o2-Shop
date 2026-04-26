@@ -28,9 +28,9 @@ type EditableShiftStatus = ShiftStatus | "LEER";
 type AppTab =
   | "dashboard"
   | "wochenplan"
+  | "monatsuebersicht"
   | "stempelzeiten"
-  | "mitarbeiter"
-  | "monatsuebersicht";
+  | "mitarbeiter";
 type UserRole = "admin" | "mitarbeiter" | null;
 
 type DayKey =
@@ -172,6 +172,7 @@ function getEasterSunday(year: number) {
   const m = Math.floor((a + 11 * h + 22 * l) / 451);
   const month = Math.floor((h + l - 7 * m + 114) / 31);
   const day = ((h + l - 7 * m + 114) % 31) + 1;
+
   return new Date(year, month - 1, day);
 }
 
@@ -352,24 +353,6 @@ export default function Home() {
   const [manualClockIn, setManualClockIn] = useState("10:00");
   const [manualClockOut, setManualClockOut] = useState("18:00");
   const [manualReason, setManualReason] = useState("Manuelle Korrektur");
-
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 900);
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  function closeMobileMenu() {
-    if (isMobile) setMobileMenuOpen(false);
-  }
 
   function clearAuthState() {
     setLoggedIn(false);
@@ -1100,7 +1083,9 @@ export default function Home() {
 
   function getDateForDay(day: DayKey) {
     if (!weekStart) return "";
+
     const [year, month, dayOfMonth] = weekStart.split("-").map(Number);
+
     const dayIndexMap: Record<DayKey, number> = {
       monday: 0,
       tuesday: 1,
@@ -1780,6 +1765,50 @@ export default function Home() {
     printWindow.print();
   }
 
+  function renderPlanReadOnly(edit: WeeklyEdit) {
+    if (edit.status === "LEER") {
+      return <span style={{ color: "#888" }}>-</span>;
+    }
+
+    if (edit.status === "ARBEIT") {
+      return (
+        <div>
+          <div style={statusBadgeBlue}>ARBEIT</div>
+          <div style={{ marginTop: "6px", fontWeight: "bold" }}>
+            ({edit.location}) {edit.start}-{edit.end}
+          </div>
+          {edit.note ? (
+            <div style={{ marginTop: "6px", color: "#5f6368", fontSize: "12px" }}>
+              {edit.note}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    const style =
+      edit.status === "FEIERTAG"
+        ? statusBadgeRed
+        : edit.status === "URLAUB"
+        ? statusBadgeGreen
+        : edit.status === "KRANK"
+        ? statusBadgeOrange
+        : edit.status === "SCHULUNG"
+        ? statusBadgeYellow
+        : statusBadgeGray;
+
+    return (
+      <div>
+        <div style={style}>{edit.status}</div>
+        {edit.note ? (
+          <div style={{ marginTop: "6px", color: "#5f6368", fontSize: "12px" }}>
+            {edit.note}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderDashboard() {
     const currentVacationSummary = currentEmployee
       ? vacationSummaryByEmployee[currentEmployee.id]
@@ -1787,88 +1816,108 @@ export default function Home() {
 
     return (
       <>
+        <div style={heroCardStyle}>
+          <div>
+            <div style={eyebrowStyle}>Arbeitszeit Tool</div>
+            <h2 style={{ margin: "6px 0 10px 0", fontSize: "30px", color: "#111" }}>
+              Übersicht auf einen Blick
+            </h2>
+            <p style={{ margin: 0, color: "#5f6368", maxWidth: "700px" }}>
+              Login aktiv. Rolle: <strong>{authRole ?? "-"}</strong> · Konto{" "}
+              <strong>{authEmail || "-"}</strong>
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button onClick={() => setActiveTab("wochenplan")} style={primaryButtonStyle}>
+              Zum Wochenplan
+            </button>
+            <button
+              onClick={() => setActiveTab("monatsuebersicht")}
+              style={secondaryButtonStyle}
+            >
+              Monatsübersicht
+            </button>
+          </div>
+        </div>
+
         {!currentEmployee ? (
-          <div style={warningBannerStyle}>
+          <div style={warningCardStyle}>
             Dein Login ist noch keinem Mitarbeiter zugeordnet. Alles ansehen geht
             trotzdem, aber Ein- und Ausstempeln geht erst nach der Verknüpfung.
           </div>
         ) : null}
 
-        <div style={isMobile ? modernHeroMobileStyle : modernHeroStyle}>
-          <div>
-            <div style={modernHeroEyebrowStyle}>Arbeitszeit Tool</div>
-            <h2 style={isMobile ? modernHeroTitleMobileStyle : modernHeroTitleStyle}>Dashboard</h2>
-            <p style={modernHeroTextStyle}>
-              Übersicht über Schichten, Resturlaub, Stempelstatus und aktuelle
-              Arbeitszeiten.
-            </p>
-          </div>
-
-          <div style={heroButtonWrapStyle}>
-            <button
-              onClick={() => setActiveTab("wochenplan")}
-              style={primaryActionButtonStyle}
-            >
-              Wochenplan öffnen
-            </button>
-            <button
-              onClick={() => setActiveTab("stempelzeiten")}
-              style={secondaryActionButtonStyle}
-            >
-              Stempelübersicht
-            </button>
-          </div>
-        </div>
-
-        <div style={dashboardGridStyle}>
-          <InfoCard title="Status">
+        <div style={statsGridStyle}>
+          <StatCard title="Status">
             {clockedIn
               ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
               : "Nicht eingestempelt"}
-          </InfoCard>
-          <InfoCard title="Geplante Stunden diese Woche">
+          </StatCard>
+
+          <StatCard title="Geplante Stunden diese Woche">
             {formatHours(employeeWeekMinutes[currentEmployee?.id || ""] || 0)}
-          </InfoCard>
-          <InfoCard title="Sollstunden diese Woche">
+          </StatCard>
+
+          <StatCard title="Sollstunden diese Woche">
             {formatHours(
               weeklyTargetMinutesByEmployee[currentEmployee?.id || ""] || 0
             )}
-          </InfoCard>
-          <InfoCard title="Überstunden / Minusstunden">
+          </StatCard>
+
+          <StatCard title="Überstunden / Minusstunden Woche">
             {formatDifference(
               weeklyDifferenceByEmployee[currentEmployee?.id || ""] || 0
             )}
-          </InfoCard>
-          <InfoCard title="Gestempelte Monatsstunden">
+          </StatCard>
+
+          <StatCard title="Gestempelte Monatsstunden">
             {formatHours(monthStampedMinutes)}
-          </InfoCard>
-          <InfoCard title={`Resturlaub ${selectedVacationYear}`}>
+          </StatCard>
+
+          <StatCard title={`Resturlaub ${selectedVacationYear}`}>
             {currentVacationSummary
               ? `${currentVacationSummary.remaining} Tage`
               : "0 Tage"}
-          </InfoCard>
+          </StatCard>
         </div>
 
-        <div style={quickActionsGridStyle}>
-          <QuickActionModern
+        <div style={dashboardActionsGridStyle}>
+          <QuickActionCard
             title="Wochenplan"
-            text="Schichten ansehen oder bearbeiten."
+            text={
+              authRole === "admin"
+                ? "Dienstplan direkt in der Tabelle pflegen."
+                : "Kompletten Plan ansehen."
+            }
+            button="Öffnen"
             onClick={() => setActiveTab("wochenplan")}
           />
-          <QuickActionModern
-            title="Stempelzeiten"
-            text="Wer ist drin, wer ist draußen."
-            onClick={() => setActiveTab("stempelzeiten")}
-          />
-          <QuickActionModern
-            title="Mitarbeiter"
-            text="Mitarbeiterdaten verwalten."
-            onClick={() => setActiveTab("mitarbeiter")}
-          />
-          <QuickActionModern
+          <QuickActionCard
             title="Monatsübersicht"
             text="Geplante und gestempelte Stunden vergleichen."
+            button="Anzeigen"
             onClick={() => setActiveTab("monatsuebersicht")}
+          />
+          <QuickActionCard
+            title="Stempelzeiten"
+            text={
+              authRole === "admin"
+                ? "Live sehen, wer drin ist, und direkt ein-/ausstempeln."
+                : "Alle Stempelzeiten ansehen."
+            }
+            button="Öffnen"
+            onClick={() => setActiveTab("stempelzeiten")}
+          />
+          <QuickActionCard
+            title="Mitarbeiter"
+            text={
+              authRole === "admin"
+                ? "Mitarbeiter anlegen, bearbeiten und löschen."
+                : "Mitarbeiterliste ansehen."
+            }
+            button="Öffnen"
+            onClick={() => setActiveTab("mitarbeiter")}
           />
         </div>
       </>
@@ -1879,50 +1928,50 @@ export default function Home() {
     const showAdminActions = authRole === "admin";
 
     function getOwnRowBackground(isOwnRow: boolean) {
-      return isOwnRow ? "#eef5ff" : "#ffffff";
+      return isOwnRow ? "#eff6ff" : "#ffffff";
     }
 
     function getStatusPalette(status: EditableShiftStatus) {
       switch (status) {
         case "ARBEIT":
           return {
-            bg: "#eff6ff",
-            border: "#bfdbfe",
+            bg: "#dbeafe",
+            border: "#93c5fd",
             badgeBg: "#2563eb",
             badgeColor: "#ffffff",
           };
         case "FREI":
           return {
             bg: "#f3f4f6",
-            border: "#e5e7eb",
+            border: "#d1d5db",
             badgeBg: "#6b7280",
             badgeColor: "#ffffff",
           };
         case "URLAUB":
           return {
-            bg: "#ecfdf3",
-            border: "#bbf7d0",
+            bg: "#dcfce7",
+            border: "#86efac",
             badgeBg: "#16a34a",
             badgeColor: "#ffffff",
           };
         case "KRANK":
           return {
-            bg: "#fff7ed",
+            bg: "#ffedd5",
             border: "#fdba74",
             badgeBg: "#ea580c",
             badgeColor: "#ffffff",
           };
         case "SCHULUNG":
           return {
-            bg: "#fefce8",
-            border: "#fde68a",
+            bg: "#fef3c7",
+            border: "#fcd34d",
             badgeBg: "#ca8a04",
             badgeColor: "#ffffff",
           };
         case "FEIERTAG":
           return {
-            bg: "#fef2f2",
-            border: "#fecaca",
+            bg: "#fee2e2",
+            border: "#fca5a5",
             badgeBg: "#dc2626",
             badgeColor: "#ffffff",
           };
@@ -1951,11 +2000,11 @@ export default function Home() {
         borderRadius: "18px",
         border: `1px solid ${palette.border}`,
         background: edit.status === "LEER" ? "#ffffff" : palette.bg,
-        padding: "12px",
-        minHeight: isMobile ? "auto" : "188px",
+        padding: "10px",
+        minHeight: "165px",
         boxShadow: isOwnRow
-          ? "0 0 0 2px rgba(37,99,235,0.14)"
-          : "0 6px 18px rgba(15,23,42,0.05)",
+          ? "0 0 0 2px rgba(37,99,235,0.18)"
+          : "0 4px 10px rgba(15,23,42,0.05)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
@@ -1965,38 +2014,69 @@ export default function Home() {
         return (
           <div style={cardStyle}>
             <div>
-              <div style={cardTopRowStyle}>
-                <div style={dayCardTitleStyle}>{dayLabels[day]}</div>
-                <div style={dayCardDateStyle}>{getDateForDay(day)}</div>
-              </div>
-
               <div
                 style={{
-                  ...statusPillStyle,
+                  display: "inline-block",
+                  padding: "4px 8px",
+                  borderRadius: "999px",
                   background: palette.badgeBg,
                   color: palette.badgeColor,
+                  fontWeight: "bold",
+                  fontSize: "11px",
+                  marginBottom: "10px",
                 }}
               >
                 {edit.status === "LEER" ? "LEER" : edit.status}
               </div>
 
+              <div style={{ fontSize: "14px", fontWeight: "bold", color: "#111" }}>
+                {dayLabels[day]}
+              </div>
+
+              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>
+                {getDateForDay(day)}
+              </div>
+
               {specialLabel ? (
-                <div style={specialLabelStyle}>{specialLabel}</div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    color: "#b91c1c",
+                    marginBottom: "8px",
+                  }}
+                >
+                  {specialLabel}
+                </div>
               ) : null}
 
               {edit.status === "ARBEIT" ? (
-                <>
-                  <div style={timeBigStyle}>
-                    {edit.start} - {edit.end}
-                  </div>
-                  <div style={subInfoStyle}>Standort: {edit.location}</div>
-                </>
+                <div
+                  style={{
+                    fontSize: "15px",
+                    fontWeight: "bold",
+                    color: "#111",
+                    marginBottom: "8px",
+                  }}
+                >
+                  {edit.start} - {edit.end}
+                </div>
               ) : null}
 
-              {edit.note ? <div style={noteTextStyle}>{edit.note}</div> : null}
+              {edit.status === "ARBEIT" ? (
+                <div style={{ fontSize: "12px", color: "#374151", marginBottom: "8px" }}>
+                  Standort: {edit.location}
+                </div>
+              ) : null}
+
+              {edit.note ? (
+                <div style={{ fontSize: "12px", color: "#4b5563" }}>{edit.note}</div>
+              ) : null}
 
               {edit.status === "LEER" ? (
-                <div style={notePlaceholderStyle}>Keine Eintragung</div>
+                <div style={{ fontSize: "12px", color: "#9ca3af" }}>
+                  Keine Eintragung
+                </div>
               ) : null}
             </div>
           </div>
@@ -2006,23 +2086,40 @@ export default function Home() {
       return (
         <div style={cardStyle}>
           <div>
-            <div style={cardTopRowStyle}>
-              <div style={dayCardTitleStyle}>{dayLabels[day]}</div>
-              <div style={dayCardDateStyle}>{getDateForDay(day)}</div>
-            </div>
-
             <div
               style={{
-                ...statusPillStyle,
+                display: "inline-block",
+                padding: "4px 8px",
+                borderRadius: "999px",
                 background: palette.badgeBg,
                 color: palette.badgeColor,
+                fontWeight: "bold",
+                fontSize: "11px",
+                marginBottom: "10px",
               }}
             >
               {edit.status === "LEER" ? "LEER" : edit.status}
             </div>
 
+            <div style={{ fontSize: "14px", fontWeight: "bold", color: "#111" }}>
+              {dayLabels[day]}
+            </div>
+
+            <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>
+              {getDateForDay(day)}
+            </div>
+
             {specialLabel ? (
-              <div style={specialLabelStyle}>{specialLabel}</div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  color: "#b91c1c",
+                  marginBottom: "8px",
+                }}
+              >
+                {specialLabel}
+              </div>
             ) : null}
 
             <select
@@ -2099,63 +2196,68 @@ export default function Home() {
 
     return (
       <>
-        <PageHeader
-          title="Wochenplan"
-          subtitle={`${calendarWeekLabel} · Moderne Übersicht mit farbigen Tageskarten`}
-          right={
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Wochenplan</h2>
+              <p style={sectionTextStyle}>
+                {calendarWeekLabel} · Moderne Übersicht mit farbigen Tageskarten.
+              </p>
+            </div>
+
             <div style={actionsWrapStyle}>
               <button
                 onClick={() => setWeekStart((prev) => shiftIsoDate(prev, -7))}
-                style={secondaryActionButtonStyle}
+                style={secondaryButtonStyle}
               >
                 Vorwoche
               </button>
               <button
                 onClick={() => setWeekStart((prev) => shiftIsoDate(prev, 7))}
-                style={secondaryActionButtonStyle}
+                style={secondaryButtonStyle}
               >
                 Nächste Woche
               </button>
+
               {showAdminActions ? (
                 <button
                   onClick={copyPreviousWeekToCurrent}
-                  style={secondaryActionButtonStyle}
+                  style={secondaryButtonStyle}
                 >
                   Vorwoche kopieren
                 </button>
               ) : null}
+
               {showAdminActions ? (
                 <button
                   onClick={saveAllVisibleWeeks}
-                  style={primaryActionButtonStyle}
+                  style={primaryButtonStyle}
                 >
-                  Alle speichern
+                  Alle sichtbaren Zeilen speichern
                 </button>
               ) : null}
             </div>
-          }
-        />
+          </div>
 
-        <div style={contentPanelStyle}>
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Name suchen</label>
+          <div style={filtersGridStyle}>
+            <div>
+              <label style={labelStyle}>Name suchen</label>
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="z. B. Dennis"
-                style={modernInputStyle}
+                style={inputStyle}
               />
             </div>
 
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Anstellungsart</label>
+            <div>
+              <label style={labelStyle}>Anstellungsart filtern</label>
               <select
                 value={employmentFilter}
                 onChange={(e) =>
                   setEmploymentFilter(e.target.value as EmploymentFilter)
                 }
-                style={modernInputStyle}
+                style={inputStyle}
               >
                 <option value="Alle">Alle</option>
                 <option value="Vollzeit">Vollzeit</option>
@@ -2166,123 +2268,252 @@ export default function Home() {
               </select>
             </div>
 
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Kalenderwoche</label>
+            <div>
+              <label style={labelStyle}>Kalenderwoche</label>
               <input
                 type="week"
                 value={weekInputValue}
                 onChange={(e) =>
                   setWeekStart(getMondayIsoFromWeekInput(e.target.value))
                 }
-                style={modernInputStyle}
+                style={inputStyle}
               />
             </div>
+          </div>
 
-            <div style={filterInfoStyle}>
-              <div style={filterInfoTitleStyle}>Ausgewählt</div>
-              <div style={filterInfoValueStyle}>{calendarWeekLabel}</div>
-              <div style={filterInfoSubStyle}>Woche ab {weekStart}</div>
+          <div style={{ marginTop: "12px", color: "#5f6368", fontSize: "14px" }}>
+            Ausgewählt: <strong>{calendarWeekLabel}</strong> · Woche ab{" "}
+            <strong>{weekStart}</strong>
+          </div>
+
+          <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+            <button onClick={exportWeekCsv} style={secondaryButtonStyle}>
+              Wochenplan Excel/CSV
+            </button>
+            <button onClick={printWeekPlan} style={secondaryButtonStyle}>
+              Wochenplan PDF / Drucken
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+          {filteredEmployees.length === 0 ? (
+            <div style={sectionStyle}>Keine Mitarbeiter gefunden.</div>
+          ) : (
+            filteredEmployees.map((employee) => {
+              const isOwnRow = employee.id === linkedEmployeeId;
+
+              return (
+                <div
+                  key={employee.id}
+                  style={{
+                    ...sectionStyle,
+                    padding: "18px",
+                    border: isOwnRow ? "2px solid #93c5fd" : "1px solid transparent",
+                    background: getOwnRowBackground(isOwnRow),
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      flexWrap: "wrap",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "20px",
+                          fontWeight: "bold",
+                          color: isOwnRow ? "#1d4ed8" : "#111",
+                        }}
+                      >
+                        {employee.name}
+                      </div>
+                      <div
+                        style={{
+                          color: "#6b7280",
+                          fontSize: "13px",
+                          marginTop: "4px",
+                        }}
+                      >
+                        {employee.employmentType}
+                        {isOwnRow ? " · Deine Zeile" : ""}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={summaryMiniBoxStyle}>
+                        <div style={summaryMiniLabelStyle}>Geplant</div>
+                        <div style={summaryMiniValueStyle}>
+                          {formatHours(employeeWeekMinutes[employee.id] || 0)}
+                        </div>
+                      </div>
+
+                      <div style={summaryMiniBoxStyle}>
+                        <div style={summaryMiniLabelStyle}>Soll</div>
+                        <div style={summaryMiniValueStyle}>
+                          {formatHours(weeklyTargetMinutesByEmployee[employee.id] || 0)}
+                        </div>
+                      </div>
+
+                      <div style={summaryMiniBoxStyle}>
+                        <div style={summaryMiniLabelStyle}>Differenz</div>
+                        <div
+                          style={{
+                            ...summaryMiniValueStyle,
+                            color:
+                              (weeklyDifferenceByEmployee[employee.id] || 0) > 0
+                                ? "#15803d"
+                                : (weeklyDifferenceByEmployee[employee.id] || 0) < 0
+                                ? "#b91c1c"
+                                : "#111",
+                          }}
+                        >
+                          {formatDifference(weeklyDifferenceByEmployee[employee.id] || 0)}
+                        </div>
+                      </div>
+
+                      {showAdminActions ? (
+                        <button
+                          onClick={() => saveEmployeeWeek(employee.id)}
+                          style={primaryButtonStyle}
+                        >
+                          Woche speichern
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: "12px",
+                    }}
+                  >
+                    {dayOrder.map((day) => (
+                      <div key={day}>{renderPlanCard(employee, day, isOwnRow)}</div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderMonatsuebersicht() {
+    return (
+      <>
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Monatsübersicht</h2>
+              <p style={sectionTextStyle}>
+                Vergleicht geplante Stunden mit den gestempelten Zeiten.
+              </p>
+            </div>
+            <div style={actionsWrapStyle}>
+              <button onClick={exportMonthCsv} style={secondaryButtonStyle}>
+                Monatsübersicht Excel/CSV
+              </button>
             </div>
           </div>
 
-          <div style={{ ...actionsWrapStyle, marginBottom: "18px" }}>
-            <button onClick={exportWeekCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-            <button onClick={printWeekPlan} style={secondaryActionButtonStyle}>
-              Drucken / PDF
-            </button>
+          <div style={{ maxWidth: "220px" }}>
+            <label style={labelStyle}>Monat</label>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              style={inputStyle}
+            />
           </div>
+        </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-            {filteredEmployees.length === 0 ? (
-              <div style={emptyStateStyle}>Keine Mitarbeiter gefunden.</div>
-            ) : (
-              filteredEmployees.map((employee) => {
-                const isOwnRow = employee.id === linkedEmployeeId;
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "900px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Anstellungsart</th>
+                <th style={thStyle}>Geplant</th>
+                <th style={thStyle}>Gestempelt</th>
+                <th style={thStyle}>Differenz</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyOverview.length === 0 ? (
+                <tr>
+                  <td style={tableCellStyle} colSpan={5}>
+                    Keine Daten gefunden.
+                  </td>
+                </tr>
+              ) : (
+                monthlyOverview.map((item) => (
+                  <tr key={item.employee.id}>
+                    <td style={nameCellStyle}>{item.employee.name}</td>
+                    <td style={tableCellStyle}>{item.employee.employmentType}</td>
+                    <td style={tableCellStyle}>{formatHours(item.plannedMinutes)}</td>
+                    <td style={tableCellStyle}>{formatHours(item.stampedMinutes)}</td>
+                    <td
+                      style={{
+                        ...tableCellStyle,
+                        fontWeight: "bold",
+                        color:
+                          item.difference > 0
+                            ? "#15803d"
+                            : item.difference < 0
+                            ? "#b91c1c"
+                            : "#111",
+                      }}
+                    >
+                      {formatDifference(item.difference)}
+                    </td>
+                  </tr>
+                ))
+              )}
 
-                return (
-                  <div
-                    key={employee.id}
-                    style={{
-                      ...employeeBlockStyle,
-                      background: getOwnRowBackground(isOwnRow),
-                      border: isOwnRow
-                        ? "1px solid #bfdbfe"
-                        : "1px solid #edf1f7",
-                    }}
-                  >
-                    <div style={employeeBlockHeaderStyle}>
-                      <div>
-                        <div
-                          style={{
-                            ...employeeNameModernStyle,
-                            color: isOwnRow ? "#2563eb" : "#111827",
-                          }}
-                        >
-                          {employee.name}
-                        </div>
-                        <div style={employeeSubInfoStyle}>
-                          {employee.employmentType}
-                          {isOwnRow ? " · Deine Zeile" : ""}
-                        </div>
-                      </div>
-
-                      <div style={summaryChipWrapStyle}>
-                        <div style={summaryChipStyle}>
-                          <div style={summaryChipLabelStyle}>Geplant</div>
-                          <div style={summaryChipValueStyle}>
-                            {formatHours(employeeWeekMinutes[employee.id] || 0)}
-                          </div>
-                        </div>
-                        <div style={summaryChipStyle}>
-                          <div style={summaryChipLabelStyle}>Soll</div>
-                          <div style={summaryChipValueStyle}>
-                            {formatHours(
-                              weeklyTargetMinutesByEmployee[employee.id] || 0
-                            )}
-                          </div>
-                        </div>
-                        <div style={summaryChipStyle}>
-                          <div style={summaryChipLabelStyle}>Differenz</div>
-                          <div
-                            style={{
-                              ...summaryChipValueStyle,
-                              color:
-                                (weeklyDifferenceByEmployee[employee.id] || 0) > 0
-                                  ? "#15803d"
-                                  : (weeklyDifferenceByEmployee[employee.id] || 0) <
-                                    0
-                                  ? "#dc2626"
-                                  : "#111827",
-                            }}
-                          >
-                            {formatDifference(
-                              weeklyDifferenceByEmployee[employee.id] || 0
-                            )}
-                          </div>
-                        </div>
-                        {showAdminActions ? (
-                          <button
-                            onClick={() => saveEmployeeWeek(employee.id)}
-                            style={primaryActionButtonStyle}
-                          >
-                            Woche speichern
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div style={isMobile ? dayGridMobileStyle : dayGridStyle}>
-                      {dayOrder.map((day) => (
-                        <div key={day}>{renderPlanCard(employee, day, isOwnRow)}</div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+              <tr style={{ background: "#f9fafb" }}>
+                <td style={nameCellStyle}>GESAMT</td>
+                <td style={tableCellStyle}>-</td>
+                <td style={tableCellStyle}>{formatHours(monthlyTotals.planned)}</td>
+                <td style={tableCellStyle}>{formatHours(monthlyTotals.stamped)}</td>
+                <td
+                  style={{
+                    ...tableCellStyle,
+                    fontWeight: "bold",
+                    color:
+                      monthlyTotals.diff > 0
+                        ? "#15803d"
+                        : monthlyTotals.diff < 0
+                        ? "#b91c1c"
+                        : "#111",
+                  }}
+                >
+                  {formatDifference(monthlyTotals.diff)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </>
     );
@@ -2293,154 +2524,177 @@ export default function Home() {
 
     return (
       <>
-        <PageHeader
-          title="Stempelzeiten"
-          subtitle="Live-Übersicht von heute mit direktem Ein- und Ausstempeln"
-          right={
-            <button onClick={exportTimeEntriesCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-          }
-        />
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Stempelzeiten</h2>
+              <p style={sectionTextStyle}>
+                Live-Übersicht von heute. Du siehst direkt, wer eingestempelt ist,
+                und kannst auf derselben Seite ein- oder ausstempeln.
+              </p>
+            </div>
+            <div style={actionsWrapStyle}>
+              <button onClick={exportTimeEntriesCsv} style={secondaryButtonStyle}>
+                Stempelzeiten Excel/CSV
+              </button>
+            </div>
+          </div>
 
-        <div style={dashboardGridStyle}>
-          <InfoCard title="Heute eingestempelt">{activeStampedCount}</InfoCard>
-          <InfoCard title="Heute nicht eingestempelt">
-            {inactiveStampedCount}
-          </InfoCard>
-          <InfoCard title="Dein Status">
-            {clockedIn
-              ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
-              : "Nicht eingestempelt"}
-          </InfoCard>
-          <InfoCard title="Deine Zeit heute">
-            {formatHours(todayStampedMinutes)}
-          </InfoCard>
-        </div>
-
-        <div style={contentPanelStyle}>
-          <h3 style={panelTitleStyle}>Live-Status heute</h3>
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
-                <tr>
-                  <th style={modernThStyle}>Name</th>
-                  <th style={modernThStyle}>Anstellungsart</th>
-                  <th style={modernThStyle}>Status</th>
-                  <th style={modernThStyle}>Kommen</th>
-                  <th style={modernThStyle}>Gehen</th>
-                  <th style={modernThStyle}>Heute</th>
-                  <th style={modernThStyle}>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {liveStampOverview.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={7}>
-                      Keine Mitarbeiter gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  liveStampOverview.map((item) => {
-                    const isOwn = item.employee.id === linkedEmployeeId;
-
-                    return (
-                      <tr key={item.employee.id}>
-                        <td
-                          style={{
-                            ...modernTdStyle,
-                            fontWeight: 700,
-                            color: isOwn ? "#2563eb" : "#111827",
-                          }}
-                        >
-                          {item.employee.name}
-                        </td>
-                        <td style={modernTdStyle}>{item.employee.employmentType}</td>
-                        <td style={modernTdStyle}>
-                          {item.isActive ? (
-                            <span style={statusBadgeGreen}>EINGESTEMPELT</span>
-                          ) : (
-                            <span style={statusBadgeGray}>NICHT EINGESTEMPELT</span>
-                          )}
-                        </td>
-                        <td style={modernTdStyle}>
-                          {item.openEntry?.clockIn || item.firstClockIn}
-                        </td>
-                        <td style={modernTdStyle}>
-                          {item.isActive ? "-" : item.lastClockOut}
-                        </td>
-                        <td style={modernTdStyle}>
-                          {formatHours(item.todayMinutes)}
-                        </td>
-                        <td style={modernTdStyle}>
-                          <div style={actionsWrapStyle}>
-                            {item.isActive ? (
-                              <button
-                                onClick={() =>
-                                  adminMode
-                                    ? handleAdminClockOut(
-                                        item.employee.id,
-                                        item.employee.name
-                                      )
-                                    : isOwn
-                                    ? handleClockOut()
-                                    : undefined
-                                }
-                                style={{
-                                  ...dangerButtonStyle,
-                                  opacity: adminMode || isOwn ? 1 : 0.5,
-                                  cursor:
-                                    adminMode || isOwn ? "pointer" : "not-allowed",
-                                }}
-                                disabled={!adminMode && !isOwn}
-                              >
-                                Ausstempeln
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  adminMode
-                                    ? handleAdminClockIn(
-                                        item.employee.id,
-                                        item.employee.name
-                                      )
-                                    : isOwn
-                                    ? handleClockIn()
-                                    : undefined
-                                }
-                                style={{
-                                  ...primaryActionButtonStyle,
-                                  background: "#16a34a",
-                                  opacity: adminMode || isOwn ? 1 : 0.5,
-                                  cursor:
-                                    adminMode || isOwn ? "pointer" : "not-allowed",
-                                }}
-                                disabled={!adminMode && !isOwn}
-                              >
-                                Einstempeln
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+          <div style={statsGridStyle}>
+            <StatCard title="Heute eingestempelt">{activeStampedCount}</StatCard>
+            <StatCard title="Heute nicht eingestempelt">
+              {inactiveStampedCount}
+            </StatCard>
+            <StatCard title="Dein Status">
+              {clockedIn
+                ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
+                : "Nicht eingestempelt"}
+            </StatCard>
+            <StatCard title="Deine Zeit heute">
+              {formatHours(todayStampedMinutes)}
+            </StatCard>
           </div>
         </div>
 
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <h2 style={sectionTitleStyle}>Live-Status heute</h2>
+          <p style={sectionTextStyle}>
+            Hier siehst du alle Mitarbeiter auf einen Blick.
+          </p>
+
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "1100px",
+              marginTop: "16px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Anstellungsart</th>
+                <th style={thStyle}>Status</th>
+                <th style={thStyle}>Kommen</th>
+                <th style={thStyle}>Gehen</th>
+                <th style={thStyle}>Heute</th>
+                <th style={thStyle}>Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {liveStampOverview.length === 0 ? (
+                <tr>
+                  <td style={tableCellStyle} colSpan={7}>
+                    Keine Mitarbeiter gefunden.
+                  </td>
+                </tr>
+              ) : (
+                liveStampOverview.map((item) => {
+                  const isOwn = item.employee.id === linkedEmployeeId;
+
+                  return (
+                    <tr key={item.employee.id}>
+                      <td
+                        style={{
+                          ...nameCellStyle,
+                          background: isOwn ? "#dbeafe" : "#fff",
+                          color: isOwn ? "#1d4ed8" : "#111",
+                        }}
+                      >
+                        {item.employee.name}
+                        {isOwn ? (
+                          <div style={{ fontSize: "11px", marginTop: "4px" }}>
+                            Dein Login
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={tableCellStyle}>{item.employee.employmentType}</td>
+                      <td style={tableCellStyle}>
+                        {item.isActive ? (
+                          <span style={statusBadgeGreen}>EINGESTEMPELT</span>
+                        ) : (
+                          <span style={statusBadgeGray}>NICHT EINGESTEMPELT</span>
+                        )}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {item.openEntry?.clockIn || item.firstClockIn}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {item.isActive ? "-" : item.lastClockOut}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {formatHours(item.todayMinutes)}
+                      </td>
+                      <td style={tableCellStyle}>
+                        <div style={actionsWrapStyle}>
+                          {item.isActive ? (
+                            <button
+                              onClick={() =>
+                                adminMode
+                                  ? handleAdminClockOut(
+                                      item.employee.id,
+                                      item.employee.name
+                                    )
+                                  : isOwn
+                                  ? handleClockOut()
+                                  : undefined
+                              }
+                              style={{
+                                ...dangerButtonStyle,
+                                opacity: adminMode || isOwn ? 1 : 0.5,
+                                cursor:
+                                  adminMode || isOwn ? "pointer" : "not-allowed",
+                              }}
+                              disabled={!adminMode && !isOwn}
+                            >
+                              Ausstempeln
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                adminMode
+                                  ? handleAdminClockIn(
+                                      item.employee.id,
+                                      item.employee.name
+                                    )
+                                  : isOwn
+                                  ? handleClockIn()
+                                  : undefined
+                              }
+                              style={{
+                                ...primaryButtonStyle,
+                                background: "#16a34a",
+                                opacity: adminMode || isOwn ? 1 : 0.5,
+                                cursor:
+                                  adminMode || isOwn ? "pointer" : "not-allowed",
+                              }}
+                              disabled={!adminMode && !isOwn}
+                            >
+                              Einstempeln
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
         {adminMode ? (
-          <div style={contentPanelStyle}>
-            <h3 style={panelTitleStyle}>Manuelle Korrektur</h3>
-            <div style={filtersBarStyle}>
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Mitarbeiter</label>
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>Manuelle Korrektur</h2>
+            <p style={sectionTextStyle}>Für Nachbuchungen oder Korrekturen.</p>
+
+            <div style={filtersGridStyle}>
+              <div>
+                <label style={labelStyle}>Mitarbeiter</label>
                 <select
                   value={correctionEmployeeId}
                   onChange={(e) => setCorrectionEmployeeId(e.target.value)}
-                  style={modernInputStyle}
+                  style={inputStyle}
                 >
                   {employees.map((employee) => (
                     <option key={employee.id} value={employee.id}>
@@ -2450,64 +2704,68 @@ export default function Home() {
                 </select>
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Datum</label>
+              <div>
+                <label style={labelStyle}>Datum</label>
                 <input
                   type="date"
                   value={manualEntryDate}
                   onChange={(e) => setManualEntryDate(e.target.value)}
-                  style={modernInputStyle}
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Kommen</label>
+              <div>
+                <label style={labelStyle}>Kommen</label>
                 <input
                   type="time"
                   value={manualClockIn}
                   onChange={(e) => setManualClockIn(e.target.value)}
-                  style={modernInputStyle}
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Gehen</label>
+              <div>
+                <label style={labelStyle}>Gehen</label>
                 <input
                   type="time"
                   value={manualClockOut}
                   onChange={(e) => setManualClockOut(e.target.value)}
-                  style={modernInputStyle}
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Grund</label>
+              <div>
+                <label style={labelStyle}>Grund</label>
                 <input
                   value={manualReason}
                   onChange={(e) => setManualReason(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="z. B. vergessen zu stempeln"
+                  style={inputStyle}
                 />
               </div>
             </div>
 
-            <div style={{ marginTop: "16px" }}>
-              <button onClick={addManualTimeEntry} style={primaryActionButtonStyle}>
+            <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+              <button onClick={addManualTimeEntry} style={primaryButtonStyle}>
                 Manuelle Buchung speichern
               </button>
             </div>
           </div>
         ) : null}
 
-        <div style={contentPanelStyle}>
-          <h3 style={panelTitleStyle}>Historie / Kontrolle</h3>
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <h2 style={sectionTitleStyle}>Historie / Kontrolle</h2>
+          <p style={sectionTextStyle}>
+            Einzelne Einträge prüfen und bei Bedarf korrigieren.
+          </p>
 
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Mitarbeiter anzeigen</label>
+          <div style={{ ...filtersGridStyle, marginTop: "16px" }}>
+            <div>
+              <label style={labelStyle}>Mitarbeiter anzeigen</label>
               <select
                 value={correctionEmployeeId}
                 onChange={(e) => setCorrectionEmployeeId(e.target.value)}
-                style={modernInputStyle}
+                style={inputStyle}
               >
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>
@@ -2518,136 +2776,148 @@ export default function Home() {
             </div>
           </div>
 
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: adminMode ? "1100px" : "800px",
+              marginTop: "16px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Datum</th>
+                <th style={thStyle}>Kommen</th>
+                <th style={thStyle}>Gehen</th>
+                <th style={thStyle}>Minuten</th>
+                <th style={thStyle}>Manuell</th>
+                <th style={thStyle}>Grund</th>
+                {adminMode ? <th style={thStyle}>Aktion</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {displayedTimeEntries.length === 0 ? (
                 <tr>
-                  <th style={modernThStyle}>Datum</th>
-                  <th style={modernThStyle}>Kommen</th>
-                  <th style={modernThStyle}>Gehen</th>
-                  <th style={modernThStyle}>Minuten</th>
-                  <th style={modernThStyle}>Manuell</th>
-                  <th style={modernThStyle}>Grund</th>
-                  {adminMode ? <th style={modernThStyle}>Aktion</th> : null}
+                  <td style={tableCellStyle} colSpan={adminMode ? 7 : 6}>
+                    Keine Stempelzeiten gefunden.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {displayedTimeEntries.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={adminMode ? 7 : 6}>
-                      Keine Stempelzeiten gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  displayedTimeEntries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="date"
-                            value={entry.entryDate}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                entryDate: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.entryDate
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="time"
-                            value={entry.clockIn}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                clockIn: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.clockIn
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="time"
-                            value={entry.clockOut}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                clockOut: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.clockOut || "-"
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {formatHours(calculateTimeEntryMinutes(entry))}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="checkbox"
-                            checked={entry.manualOverride}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                manualOverride: e.target.checked,
-                              })
-                            }
-                          />
-                        ) : entry.manualOverride ? (
-                          "Ja"
-                        ) : (
-                          "Nein"
-                        )}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            value={entry.reason}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                reason: e.target.value,
-                              })
-                            }
-                            style={smallInputStyle}
-                          />
-                        ) : (
-                          entry.reason || "-"
-                        )}
-                      </td>
+              ) : (
+                displayedTimeEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={tableCellStyle}>
                       {adminMode ? (
-                        <td style={modernTdStyle}>
-                          <div style={actionsWrapStyle}>
-                            <button
-                              onClick={() => saveTimeEntry(entry)}
-                              style={secondaryActionButtonStyle}
-                            >
-                              Speichern
-                            </button>
-                            <button
-                              onClick={() => deleteTimeEntry(entry.id)}
-                              style={dangerButtonStyle}
-                            >
-                              Löschen
-                            </button>
-                          </div>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                        <input
+                          type="date"
+                          value={entry.entryDate}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              entryDate: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.entryDate
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="time"
+                          value={entry.clockIn}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              clockIn: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.clockIn
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="time"
+                          value={entry.clockOut}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              clockOut: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.clockOut || "-"
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {formatHours(calculateTimeEntryMinutes(entry))}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          type="checkbox"
+                          checked={entry.manualOverride}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              manualOverride: e.target.checked,
+                            })
+                          }
+                        />
+                      ) : entry.manualOverride ? (
+                        "Ja"
+                      ) : (
+                        "Nein"
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {adminMode ? (
+                        <input
+                          value={entry.reason}
+                          onChange={(e) =>
+                            updateTimeEntryLocal(entry.id, {
+                              reason: e.target.value,
+                            })
+                          }
+                          style={smallInputStyle}
+                        />
+                      ) : (
+                        entry.reason || "-"
+                      )}
+                    </td>
+
+                    {adminMode ? (
+                      <td style={tableCellStyle}>
+                        <div style={actionsWrapStyle}>
+                          <button
+                            onClick={() => saveTimeEntry(entry)}
+                            style={secondaryButtonStyle}
+                          >
+                            Speichern
+                          </button>
+
+                          <button
+                            onClick={() => deleteTimeEntry(entry.id)}
+                            style={dangerButtonStyle}
+                          >
+                            Löschen
+                          </button>
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </>
     );
@@ -2656,37 +2926,40 @@ export default function Home() {
   function renderMitarbeiter() {
     return (
       <>
-        <PageHeader
-          title="Mitarbeiter"
-          subtitle="Mitarbeiterdaten, Urlaub und Sollstunden verwalten"
-        />
-
         {authRole === "admin" ? (
-          <div style={contentPanelStyle}>
-            <h3 style={panelTitleStyle}>
-              {editingEmployeeId
-                ? "Mitarbeiter bearbeiten"
-                : "Mitarbeiter hinzufügen"}
-            </h3>
+          <div style={sectionStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <h2 style={sectionTitleStyle}>
+                  {editingEmployeeId
+                    ? "Mitarbeiter bearbeiten"
+                    : "Mitarbeiter hinzufügen"}
+                </h2>
+                <p style={sectionTextStyle}>
+                  Hier trägst du den Jahresurlaub und die Sollstunden pro Woche ein.
+                </p>
+              </div>
+            </div>
 
-            <div style={filtersBarStyle}>
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Name</label>
+            <div style={filtersGridStyle}>
+              <div>
+                <label style={labelStyle}>Name</label>
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="Name"
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Anstellungsart</label>
+              <div>
+                <label style={labelStyle}>Anstellungsart</label>
                 <select
                   value={newEmploymentType}
                   onChange={(e) =>
                     setNewEmploymentType(e.target.value as EmploymentType)
                   }
-                  style={modernInputStyle}
+                  style={inputStyle}
                 >
                   <option value="Vollzeit">Vollzeit</option>
                   <option value="Teilzeit">Teilzeit</option>
@@ -2696,38 +2969,38 @@ export default function Home() {
                 </select>
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Urlaubstage gesamt</label>
+              <div>
+                <label style={labelStyle}>Urlaubstage gesamt</label>
                 <input
                   value={newVacation}
                   onChange={(e) => setNewVacation(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="z. B. 30"
+                  style={inputStyle}
                 />
               </div>
 
-              <div style={filterBoxStyle}>
-                <label style={filterLabelStyle}>Sollstunden pro Woche</label>
+              <div>
+                <label style={labelStyle}>Sollstunden pro Woche</label>
                 <input
                   type="number"
                   step="0.01"
                   value={newWeeklyTarget}
                   onChange={(e) => setNewWeeklyTarget(e.target.value)}
-                  style={modernInputStyle}
+                  placeholder="z. B. 40"
+                  style={inputStyle}
                 />
               </div>
             </div>
 
-            <div style={{ ...actionsWrapStyle, marginTop: "16px" }}>
-              <button onClick={addEmployee} style={primaryActionButtonStyle}>
+            <div style={{ ...actionsWrapStyle, marginTop: "15px" }}>
+              <button onClick={addEmployee} style={primaryButtonStyle}>
                 {editingEmployeeId
                   ? "Mitarbeiter aktualisieren"
                   : "Mitarbeiter speichern"}
               </button>
+
               {editingEmployeeId ? (
-                <button
-                  onClick={resetEmployeeForm}
-                  style={secondaryActionButtonStyle}
-                >
+                <button onClick={resetEmployeeForm} style={secondaryButtonStyle}>
                   Bearbeiten abbrechen
                 </button>
               ) : null}
@@ -2735,25 +3008,26 @@ export default function Home() {
           </div>
         ) : null}
 
-        <div style={contentPanelStyle}>
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Name suchen</label>
+        <div style={sectionStyle}>
+          <div style={filtersGridStyle}>
+            <div>
+              <label style={labelStyle}>Name suchen</label>
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                style={modernInputStyle}
+                placeholder="z. B. Dennis"
+                style={inputStyle}
               />
             </div>
 
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Anstellungsart</label>
+            <div>
+              <label style={labelStyle}>Anstellungsart filtern</label>
               <select
                 value={employmentFilter}
                 onChange={(e) =>
                   setEmploymentFilter(e.target.value as EmploymentFilter)
                 }
-                style={modernInputStyle}
+                style={inputStyle}
               >
                 <option value="Alle">Alle</option>
                 <option value="Vollzeit">Vollzeit</option>
@@ -2764,187 +3038,87 @@ export default function Home() {
               </select>
             </div>
           </div>
-
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
-                <tr>
-                  <th style={modernThStyle}>Name</th>
-                  <th style={modernThStyle}>Anstellungsart</th>
-                  <th style={modernThStyle}>Urlaub gesamt</th>
-                  <th style={modernThStyle}>Genommen {selectedVacationYear}</th>
-                  <th style={modernThStyle}>Resturlaub {selectedVacationYear}</th>
-                  <th style={modernThStyle}>Soll/Woche</th>
-                  <th style={modernThStyle}>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEmployees.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={7}>
-                      Keine Mitarbeiter gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredEmployees.map((employee) => {
-                    const vacation = vacationSummaryByEmployee[employee.id] || {
-                      total: 0,
-                      used: 0,
-                      remaining: 0,
-                    };
-
-                    return (
-                      <tr key={employee.id}>
-                        <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                          {employee.name}
-                        </td>
-                        <td style={modernTdStyle}>{employee.employmentType}</td>
-                        <td style={modernTdStyle}>{vacation.total}</td>
-                        <td style={modernTdStyle}>{vacation.used}</td>
-                        <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                          {vacation.remaining}
-                        </td>
-                        <td style={modernTdStyle}>{employee.weeklyTargetHours}</td>
-                        <td style={modernTdStyle}>
-                          {authRole === "admin" ? (
-                            <div style={actionsWrapStyle}>
-                              <button
-                                onClick={() => startEditEmployee(employee)}
-                                style={secondaryActionButtonStyle}
-                              >
-                                Bearbeiten
-                              </button>
-                              {employee.name.toLowerCase() === "admin" ? (
-                                <span style={{ color: "#64748b" }}>Admin</span>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    deleteEmployee(employee.id, employee.name)
-                                  }
-                                  style={dangerButtonStyle}
-                                >
-                                  Löschen
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{ color: "#64748b" }}>Nur lesen</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
-      </>
-    );
-  }
 
-  function renderMonatsuebersicht() {
-    return (
-      <>
-        <PageHeader
-          title="Monatsübersicht"
-          subtitle="Geplante und gestempelte Stunden im Monatsvergleich"
-          right={
-            <button onClick={exportMonthCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-          }
-        />
-
-        <div style={contentPanelStyle}>
-          <div style={filtersBarStyle}>
-            <div style={filterBoxStyle}>
-              <label style={filterLabelStyle}>Monat</label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                style={modernInputStyle}
-              />
-            </div>
-          </div>
-
-          <div style={tableShellStyle}>
-            <table style={modernTableStyle}>
-              <thead>
+        <div style={{ ...sectionStyle, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "1200px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Anstellungsart</th>
+                <th style={thStyle}>Urlaub gesamt</th>
+                <th style={thStyle}>Genommen {selectedVacationYear}</th>
+                <th style={thStyle}>Resturlaub {selectedVacationYear}</th>
+                <th style={thStyle}>Soll/Woche</th>
+                <th style={thStyle}>Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.length === 0 ? (
                 <tr>
-                  <th style={modernThStyle}>Name</th>
-                  <th style={modernThStyle}>Anstellungsart</th>
-                  <th style={modernThStyle}>Geplant</th>
-                  <th style={modernThStyle}>Gestempelt</th>
-                  <th style={modernThStyle}>Differenz</th>
+                  <td style={tableCellStyle} colSpan={7}>
+                    Keine Mitarbeiter gefunden.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {monthlyOverview.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={5}>
-                      Keine Daten gefunden.
-                    </td>
-                  </tr>
-                ) : (
-                  monthlyOverview.map((item) => (
-                    <tr key={item.employee.id}>
-                      <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                        {item.employee.name}
+              ) : (
+                filteredEmployees.map((employee) => {
+                  const vacation = vacationSummaryByEmployee[employee.id] || {
+                    total: 0,
+                    used: 0,
+                    remaining: 0,
+                  };
+
+                  return (
+                    <tr key={employee.id}>
+                      <td style={nameCellStyle}>{employee.name}</td>
+                      <td style={tableCellStyle}>{employee.employmentType}</td>
+                      <td style={tableCellStyle}>{vacation.total}</td>
+                      <td style={tableCellStyle}>{vacation.used}</td>
+                      <td style={{ ...tableCellStyle, fontWeight: "bold" }}>
+                        {vacation.remaining}
                       </td>
-                      <td style={modernTdStyle}>{item.employee.employmentType}</td>
-                      <td style={modernTdStyle}>
-                        {formatHours(item.plannedMinutes)}
-                      </td>
-                      <td style={modernTdStyle}>
-                        {formatHours(item.stampedMinutes)}
-                      </td>
-                      <td
-                        style={{
-                          ...modernTdStyle,
-                          fontWeight: 700,
-                          color:
-                            item.difference > 0
-                              ? "#15803d"
-                              : item.difference < 0
-                              ? "#dc2626"
-                              : "#111827",
-                        }}
-                      >
-                        {formatDifference(item.difference)}
+                      <td style={tableCellStyle}>{employee.weeklyTargetHours}</td>
+                      <td style={tableCellStyle}>
+                        {authRole === "admin" ? (
+                          <div style={actionsWrapStyle}>
+                            <button
+                              onClick={() => startEditEmployee(employee)}
+                              style={secondaryButtonStyle}
+                            >
+                              Bearbeiten
+                            </button>
+
+                            {employee.name.toLowerCase() === "admin" ? (
+                              <span style={{ color: "#666", alignSelf: "center" }}>
+                                Admin
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() =>
+                                  deleteEmployee(employee.id, employee.name)
+                                }
+                                style={dangerButtonStyle}
+                              >
+                                Löschen
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#666" }}>Nur lesen</span>
+                        )}
                       </td>
                     </tr>
-                  ))
-                )}
-
-                <tr>
-                  <td style={{ ...modernTdStyle, fontWeight: 700 }}>GESAMT</td>
-                  <td style={modernTdStyle}>-</td>
-                  <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                    {formatHours(monthlyTotals.planned)}
-                  </td>
-                  <td style={{ ...modernTdStyle, fontWeight: 700 }}>
-                    {formatHours(monthlyTotals.stamped)}
-                  </td>
-                  <td
-                    style={{
-                      ...modernTdStyle,
-                      fontWeight: 700,
-                      color:
-                        monthlyTotals.diff > 0
-                          ? "#15803d"
-                          : monthlyTotals.diff < 0
-                          ? "#dc2626"
-                          : "#111827",
-                    }}
-                  >
-                    {formatDifference(monthlyTotals.diff)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </>
     );
@@ -2961,218 +3135,166 @@ export default function Home() {
   if (!loggedIn) {
     return (
       <main style={loginPageStyle}>
-        <div style={isMobile ? loginShellMobileStyle : loginShellStyle}>
-          <div style={loginBrandBlockStyle}>
-            <div style={loginBrandLogoStyle}>O2</div>
-            <h1 style={loginBrandTitleStyle}>Arbeitszeit Tool</h1>
-            <p style={loginBrandTextStyle}>
-              Modernes Dashboard für Wochenplan, Stempelzeiten und Mitarbeiter.
-            </p>
+        <div style={loginCardStyle}>
+          <div style={eyebrowStyle}>Arbeitszeit Tool</div>
+          <h1 style={{ margin: "8px 0 10px 0", fontSize: "32px", color: "#111" }}>
+            Login
+          </h1>
+          <p style={{ color: "#5f6368", marginBottom: "25px" }}>
+            Mit deiner Supabase-E-Mail und deinem Passwort anmelden.
+          </p>
+
+          <div style={{ marginBottom: "14px" }}>
+            <label style={labelStyle}>E-Mail</label>
+            <input
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              placeholder="name@beispiel.de"
+              style={inputStyle}
+              autoComplete="email"
+            />
           </div>
 
-          <div style={loginCardStyle}>
-            <div style={eyebrowStyle}>Anmeldung</div>
-            <h2 style={loginTitleStyle}>Willkommen zurück</h2>
-            <p style={loginSubTextStyle}>
-              Mit deiner Supabase-E-Mail und deinem Passwort anmelden.
-            </p>
-
-            <div style={{ marginBottom: "14px" }}>
-              <label style={labelStyle}>E-Mail</label>
-              <input
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="name@beispiel.de"
-                style={modernInputStyle}
-                autoComplete="email"
-              />
-            </div>
-
-            <div style={{ marginBottom: "20px" }}>
-              <label style={labelStyle}>Passwort</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Passwort"
-                style={modernInputStyle}
-                autoComplete="current-password"
-              />
-            </div>
-
-            <button onClick={handleLogin} style={loginButtonStyle}>
-              Einloggen
-            </button>
+          <div style={{ marginBottom: "20px" }}>
+            <label style={labelStyle}>Passwort</label>
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="Passwort"
+              style={inputStyle}
+              autoComplete="current-password"
+            />
           </div>
+
+          <button onClick={handleLogin} style={primaryButtonStyle}>
+            Einloggen
+          </button>
         </div>
       </main>
     );
   }
 
-  const sidebarItems: { key: AppTab; label: string }[] = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "wochenplan", label: "Wochenplan" },
-    { key: "stempelzeiten", label: "Stempelzeiten" },
-    { key: "monatsuebersicht", label: "Monatsübersicht" },
-    { key: "mitarbeiter", label: "Mitarbeiter" },
-  ];
-
   return (
-    <main style={isMobile ? appShellMobileStyle : appShellStyle}>
-      {isMobile ? (
-        <div
-          style={{
-            ...mobileOverlayStyle,
-            display: mobileMenuOpen ? "block" : "none",
-          }}
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      ) : null}
-
-      <aside
-        style={
-          isMobile
-            ? {
-                ...sidebarMobileStyle,
-                transform: mobileMenuOpen
-                  ? "translateX(0)"
-                  : "translateX(-110%)",
-              }
-            : sidebarStyle
-        }
-      >
-        <div>
-          <div style={sidebarBrandStyle}>
-            <div style={sidebarBrandLogoStyle}>O2</div>
-            <div>
-              <div style={sidebarBrandTitleStyle}>Arbeitszeit Tool</div>
-              <div style={sidebarBrandSubStyle}>Shop Management</div>
-            </div>
-          </div>
-
-          <div style={sidebarSectionLabelStyle}>Navigation</div>
-
-          <nav style={sidebarNavStyle}>
-            {sidebarItems.map((item) => (
-              <button
-                key={item.key}
-                onClick={() => {
-                  setActiveTab(item.key);
-                  closeMobileMenu();
-                }}
-                style={{
-                  ...sidebarButtonStyle,
-                  background:
-                    activeTab === item.key
-                      ? "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)"
-                      : "transparent",
-                  color: activeTab === item.key ? "#ffffff" : "#cbd5e1",
-                  boxShadow:
-                    activeTab === item.key
-                      ? "0 10px 24px rgba(37,99,235,0.28)"
-                      : "none",
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        <div>
-          <div style={sidebarFooterCardStyle}>
-            <div style={sidebarFooterNameStyle}>
-              {authEmail || "Unbekannt"}
-            </div>
-            <div style={sidebarFooterRoleStyle}>{authRole || "-"}</div>
-          </div>
-
-          <button onClick={handleLogout} style={sidebarLogoutStyle}>
-            Abmelden
-          </button>
-        </div>
-      </aside>
-
-      <section style={isMobile ? mainAreaMobileStyle : mainAreaStyle}>
-        <header style={isMobile ? topHeaderMobileStyle : topHeaderStyle}>
-          {isMobile ? (
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              style={mobileMenuButtonStyle}
-            >
-              ☰ Menü
-            </button>
-          ) : null}
-
+    <main style={pageStyle}>
+      <div style={pageInnerStyle}>
+        <div style={topBarStyle}>
           <div>
-            <div style={topHeaderEyebrowStyle}>Shop Übersicht</div>
-            <h1 style={isMobile ? topHeaderTitleMobileStyle : topHeaderTitleStyle}>
-              {activeTab === "dashboard" && "Dashboard"}
-              {activeTab === "wochenplan" && "Wochenplan"}
-              {activeTab === "stempelzeiten" && "Stempelzeiten"}
-              {activeTab === "mitarbeiter" && "Mitarbeiter"}
-              {activeTab === "monatsuebersicht" && "Monatsübersicht"}
-            </h1>
+            <div style={eyebrowStyle}>Arbeitszeit Tool</div>
+            <h1 style={{ margin: "6px 0 4px 0", color: "#111" }}>Shop Übersicht</h1>
+            <p style={{ margin: 0, color: "#5f6368" }}>
+              Eingeloggt als <strong>{authEmail || "-"}</strong> · Rolle{" "}
+              <strong>{authRole || "-"}</strong>
+            </p>
           </div>
 
-          <div style={isMobile ? topHeaderActionsMobileStyle : topHeaderActionsStyle}>
-            <div style={isMobile ? topHeaderUserCardMobileStyle : topHeaderUserCardStyle}>
-              <div style={topHeaderUserAvatarStyle}>
-                {(authEmail || "U").slice(0, 1).toUpperCase()}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={topHeaderUserNameStyle}>{authEmail || "-"}</div>
-                <div style={topHeaderUserRoleStyle}>{authRole || "-"}</div>
-              </div>
-            </div>
-
+          <div style={actionsWrapStyle}>
             <button
               onClick={clockedIn ? handleClockOut : handleClockIn}
               style={{
-                ...primaryActionButtonStyle,
+                ...primaryButtonStyle,
                 background: clockedIn ? "#dc2626" : "#16a34a",
-                width: isMobile ? "100%" : undefined,
               }}
             >
               {clockedIn ? "Ausstempeln" : "Einstempeln"}
             </button>
-          </div>
-        </header>
 
-        <div style={isMobile ? mainContentMobileStyle : mainContentStyle}>
-          {activeTab === "dashboard" ? renderDashboard() : null}
-          {activeTab === "wochenplan" ? renderWochenplan() : null}
-          {activeTab === "stempelzeiten" ? renderStempelzeiten() : null}
-          {activeTab === "mitarbeiter" ? renderMitarbeiter() : null}
-          {activeTab === "monatsuebersicht" ? renderMonatsuebersicht() : null}
+            <button onClick={handleLogout} style={secondaryButtonStyle}>
+              Abmelden
+            </button>
+          </div>
         </div>
-      </section>
+
+        <div style={tabsBarStyle}>
+          <TabButton
+            active={activeTab === "dashboard"}
+            onClick={() => setActiveTab("dashboard")}
+          >
+            Dashboard
+          </TabButton>
+          <TabButton
+            active={activeTab === "wochenplan"}
+            onClick={() => setActiveTab("wochenplan")}
+          >
+            Wochenplan
+          </TabButton>
+          <TabButton
+            active={activeTab === "monatsuebersicht"}
+            onClick={() => setActiveTab("monatsuebersicht")}
+          >
+            Monatsübersicht
+          </TabButton>
+          <TabButton
+            active={activeTab === "stempelzeiten"}
+            onClick={() => setActiveTab("stempelzeiten")}
+          >
+            Stempelzeiten
+          </TabButton>
+          <TabButton
+            active={activeTab === "mitarbeiter"}
+            onClick={() => setActiveTab("mitarbeiter")}
+          >
+            Mitarbeiter
+          </TabButton>
+        </div>
+
+        {activeTab === "dashboard" ? renderDashboard() : null}
+        {activeTab === "wochenplan" ? renderWochenplan() : null}
+        {activeTab === "monatsuebersicht" ? renderMonatsuebersicht() : null}
+        {activeTab === "stempelzeiten" ? renderStempelzeiten() : null}
+        {activeTab === "mitarbeiter" ? renderMitarbeiter() : null}
+      </div>
     </main>
   );
 }
 
-function PageHeader({
-  title,
-  subtitle,
-  right,
+function TabButton({
+  active,
+  onClick,
+  children,
 }: {
-  title: string;
-  subtitle: string;
-  right?: ReactNode;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
 }) {
   return (
-    <div style={pageHeaderStyle}>
-      <div>
-        <div style={pageHeaderEyebrowStyle}>Bereich</div>
-        <h2 style={pageHeaderTitleStyle}>{title}</h2>
-        <p style={pageHeaderTextStyle}>{subtitle}</p>
-      </div>
-      {right ? <div>{right}</div> : null}
+    <button
+      onClick={onClick}
+      style={{
+        ...tabButtonStyle,
+        background: active ? "#2563eb" : "white",
+        color: active ? "white" : "#111",
+        borderColor: active ? "#2563eb" : "#d6dae1",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function QuickActionCard({
+  title,
+  text,
+  button,
+  onClick,
+}: {
+  title: string;
+  text: string;
+  button: string;
+  onClick: () => void;
+}) {
+  return (
+    <div style={quickActionCardStyle}>
+      <h3 style={{ margin: "0 0 8px 0", color: "#111" }}>{title}</h3>
+      <p style={{ margin: "0 0 16px 0", color: "#5f6368" }}>{text}</p>
+      <button onClick={onClick} style={secondaryButtonStyle}>
+        {button}
+      </button>
     </div>
   );
 }
 
-function InfoCard({
+function StatCard({
   title,
   children,
 }: {
@@ -3180,859 +3302,149 @@ function InfoCard({
   children: ReactNode;
 }) {
   return (
-    <div style={infoCardStyle}>
-      <div style={infoCardLabelStyle}>{title}</div>
-      <div style={infoCardValueStyle}>{children}</div>
+    <div style={statCardStyle}>
+      <div style={{ color: "#6b7280", fontSize: "13px", marginBottom: "8px" }}>
+        {title}
+      </div>
+      <div style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>
+        {children}
+      </div>
     </div>
   );
 }
 
-function QuickActionModern({
-  title,
-  text,
-  onClick,
-}: {
-  title: string;
-  text: string;
-  onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick} style={quickActionCardModernStyle}>
-      <div style={quickActionTitleStyle}>{title}</div>
-      <div style={quickActionTextStyle}>{text}</div>
-    </button>
-  );
-}
-
-const appShellStyle: CSSProperties = {
+const pageStyle: CSSProperties = {
   minHeight: "100vh",
-  background: "#f4f7fb",
-  display: "flex",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
-  color: "#111827",
+  background: "linear-gradient(180deg, #eef4ff 0%, #f7f9fc 100%)",
+  padding: "20px",
+  fontFamily: "Arial, sans-serif",
+  color: "#111",
 };
 
-const appShellMobileStyle: CSSProperties = {
-  minHeight: "100vh",
-  background: "#f4f7fb",
-  display: "block",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
-  color: "#111827",
+const pageInnerStyle: CSSProperties = {
+  maxWidth: "1600px",
+  margin: "0 auto",
 };
 
-const sidebarStyle: CSSProperties = {
-  width: "280px",
-  minWidth: "280px",
-  height: "100vh",
-  position: "sticky",
-  top: 0,
-  background: "linear-gradient(180deg, #0f274d 0%, #0a1c39 100%)",
-  color: "white",
-  padding: "24px 18px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-  boxShadow: "10px 0 30px rgba(15,23,42,0.08)",
-  overflowY: "auto",
-};
-
-const sidebarMobileStyle: CSSProperties = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  width: "280px",
-  height: "100vh",
-  zIndex: 50,
-  background: "linear-gradient(180deg, #0f274d 0%, #0a1c39 100%)",
-  color: "white",
-  padding: "24px 18px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-  boxShadow: "20px 0 50px rgba(15,23,42,0.35)",
-  transition: "transform 0.25s ease",
-  overflowY: "auto",
-};
-
-const mobileOverlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(15,23,42,0.45)",
-  zIndex: 40,
-};
-
-const sidebarBrandStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  marginBottom: "28px",
-};
-
-const sidebarBrandLogoStyle: CSSProperties = {
-  width: "44px",
-  height: "44px",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 800,
-  fontSize: "18px",
-};
-
-const sidebarBrandTitleStyle: CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 700,
-};
-
-const sidebarBrandSubStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#94a3b8",
-};
-
-const sidebarSectionLabelStyle: CSSProperties = {
-  fontSize: "11px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#94a3b8",
-  marginBottom: "12px",
-};
-
-const sidebarNavStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
-const sidebarButtonStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderRadius: "14px",
-  padding: "14px 16px",
-  textAlign: "left",
-  fontWeight: 600,
-  fontSize: "15px",
-  cursor: "pointer",
-};
-
-const sidebarFooterCardStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.08)",
-  borderRadius: "16px",
-  padding: "14px",
-  marginBottom: "12px",
-};
-
-const sidebarFooterNameStyle: CSSProperties = {
-  fontSize: "14px",
-  fontWeight: 700,
-  wordBreak: "break-word",
-};
-
-const sidebarFooterRoleStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#cbd5e1",
-  marginTop: "4px",
-};
-
-const sidebarLogoutStyle: CSSProperties = {
-  width: "100%",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: "14px",
-  padding: "12px 14px",
-  background: "transparent",
-  color: "#ffffff",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const mainAreaStyle: CSSProperties = {
-  flex: 1,
-  display: "flex",
-  flexDirection: "column",
-  minWidth: 0,
-};
-
-const mainAreaMobileStyle: CSSProperties = {
-  width: "100%",
-  display: "flex",
-  flexDirection: "column",
-  minWidth: 0,
-};
-
-const topHeaderStyle: CSSProperties = {
-  background: "#ffffff",
-  borderBottom: "1px solid #e8edf5",
-  padding: "22px 28px",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "20px",
-  flexWrap: "wrap",
-};
-
-const topHeaderMobileStyle: CSSProperties = {
-  background: "#ffffff",
-  borderBottom: "1px solid #e8edf5",
-  padding: "14px 16px",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: "14px",
-};
-
-const mobileMenuButtonStyle: CSSProperties = {
-  border: "1px solid #dbe3ef",
-  borderRadius: "14px",
-  background: "#ffffff",
-  color: "#0f172a",
-  padding: "12px 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-  alignSelf: "flex-start",
-};
-
-const topHeaderEyebrowStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  fontWeight: 700,
-};
-
-const topHeaderTitleStyle: CSSProperties = {
-  margin: "4px 0 0 0",
-  fontSize: "28px",
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const topHeaderTitleMobileStyle: CSSProperties = {
-  margin: "4px 0 0 0",
-  fontSize: "24px",
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const topHeaderActionsStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "14px",
-  flexWrap: "wrap",
-};
-
-const topHeaderActionsMobileStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: "12px",
-};
-
-const topHeaderUserCardStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  padding: "10px 12px",
-  borderRadius: "16px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-};
-
-const topHeaderUserCardMobileStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  padding: "10px 12px",
-  borderRadius: "16px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  overflow: "hidden",
-};
-
-const topHeaderUserAvatarStyle: CSSProperties = {
-  width: "40px",
-  minWidth: "40px",
-  height: "40px",
-  borderRadius: "50%",
-  background: "#dbeafe",
-  color: "#1d4ed8",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 800,
-};
-
-const topHeaderUserNameStyle: CSSProperties = {
-  fontSize: "14px",
-  fontWeight: 700,
-  color: "#0f172a",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const topHeaderUserRoleStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-};
-
-const mainContentStyle: CSSProperties = {
-  padding: "28px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "20px",
-};
-
-const mainContentMobileStyle: CSSProperties = {
-  padding: "14px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "16px",
-};
-
-const pageHeaderStyle: CSSProperties = {
-  background: "#ffffff",
+const topBarStyle: CSSProperties = {
+  background: "white",
   borderRadius: "24px",
   padding: "24px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
+  marginBottom: "18px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "20px",
+  flexWrap: "wrap",
+};
+
+const tabsBarStyle: CSSProperties = {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  marginBottom: "20px",
+};
+
+const tabButtonStyle: CSSProperties = {
+  padding: "12px 16px",
+  borderRadius: "999px",
+  border: "1px solid #d6dae1",
+  background: "white",
+  cursor: "pointer",
+  fontWeight: "bold",
+  boxShadow: "0 4px 12px rgba(15,23,42,0.05)",
+};
+
+const sectionStyle: CSSProperties = {
+  background: "white",
+  borderRadius: "24px",
+  padding: "22px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+  marginBottom: "20px",
+};
+
+const sectionHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "flex-start",
   gap: "16px",
   flexWrap: "wrap",
+  marginBottom: "16px",
 };
 
-const pageHeaderEyebrowStyle: CSSProperties = {
-  fontSize: "11px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#64748b",
-  fontWeight: 700,
-  marginBottom: "6px",
-};
-
-const pageHeaderTitleStyle: CSSProperties = {
+const sectionTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: "28px",
-  color: "#0f172a",
-};
-
-const pageHeaderTextStyle: CSSProperties = {
-  margin: "8px 0 0 0",
-  color: "#64748b",
-};
-
-const contentPanelStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "24px",
-  padding: "24px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-};
-
-const warningBannerStyle: CSSProperties = {
-  background: "#fff7ed",
-  color: "#9a3412",
-  border: "1px solid #fdba74",
-  borderRadius: "18px",
-  padding: "14px 16px",
-};
-
-const modernHeroStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 70%)",
-  borderRadius: "26px",
-  padding: "26px",
-  border: "1px solid #dbeafe",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "18px",
-  flexWrap: "wrap",
-};
-
-const modernHeroMobileStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 70%)",
-  borderRadius: "24px",
-  padding: "20px",
-  border: "1px solid #dbeafe",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: "18px",
-};
-
-const modernHeroEyebrowStyle: CSSProperties = {
-  fontSize: "12px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#2563eb",
-  fontWeight: 800,
-};
-
-const modernHeroTitleStyle: CSSProperties = {
-  fontSize: "34px",
-  margin: "6px 0 8px 0",
-  color: "#0f172a",
-};
-
-const modernHeroTitleMobileStyle: CSSProperties = {
-  fontSize: "28px",
-  margin: "6px 0 8px 0",
-  color: "#0f172a",
-};
-
-const modernHeroTextStyle: CSSProperties = {
-  margin: 0,
-  color: "#475569",
-  maxWidth: "700px",
-};
-
-const heroButtonWrapStyle: CSSProperties = {
-  display: "flex",
-  gap: "12px",
-  flexWrap: "wrap",
-};
-
-const dashboardGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "16px",
-};
-
-const infoCardStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "22px",
-  padding: "22px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-};
-
-const infoCardLabelStyle: CSSProperties = {
-  fontSize: "13px",
-  color: "#64748b",
-  marginBottom: "10px",
-};
-
-const infoCardValueStyle: CSSProperties = {
   fontSize: "24px",
-  fontWeight: 800,
-  color: "#0f172a",
+  color: "#111",
 };
 
-const quickActionsGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-  gap: "16px",
+const sectionTextStyle: CSSProperties = {
+  margin: "6px 0 0 0",
+  color: "#5f6368",
 };
 
-const quickActionCardModernStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "22px",
-  border: "1px solid #e8edf5",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-  padding: "20px",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const quickActionTitleStyle: CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 800,
-  color: "#0f172a",
-  marginBottom: "8px",
-};
-
-const quickActionTextStyle: CSSProperties = {
-  color: "#64748b",
-  fontSize: "14px",
-};
-
-const primaryActionButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-  color: "#ffffff",
-  padding: "12px 18px",
-  fontWeight: 700,
-  cursor: "pointer",
-  boxShadow: "0 10px 24px rgba(37,99,235,0.22)",
-};
-
-const secondaryActionButtonStyle: CSSProperties = {
-  border: "1px solid #dbe3ef",
-  borderRadius: "14px",
-  background: "#ffffff",
-  color: "#0f172a",
-  padding: "12px 18px",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const filtersBarStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "14px",
-  marginBottom: "18px",
-};
-
-const filterBoxStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
-const filterLabelStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-};
-
-const modernInputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "13px 14px",
-  borderRadius: "14px",
-  border: "1px solid #dbe3ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: "15px",
-};
-
-const filterInfoStyle: CSSProperties = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: "18px",
-  padding: "14px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-};
-
-const filterInfoTitleStyle: CSSProperties = {
-  fontSize: "11px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "#64748b",
-  fontWeight: 800,
-};
-
-const filterInfoValueStyle: CSSProperties = {
-  fontSize: "20px",
-  fontWeight: 800,
-  color: "#0f172a",
-  marginTop: "6px",
-};
-
-const filterInfoSubStyle: CSSProperties = {
-  fontSize: "13px",
-  color: "#64748b",
-  marginTop: "4px",
-};
-
-const employeeBlockStyle: CSSProperties = {
+const heroCardStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #dbeafe 0%, #ffffff 70%)",
   borderRadius: "24px",
-  padding: "20px",
-  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
-};
-
-const employeeBlockHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "16px",
-  flexWrap: "wrap",
-  marginBottom: "18px",
-};
-
-const employeeNameModernStyle: CSSProperties = {
-  fontSize: "22px",
-  fontWeight: 800,
-};
-
-const employeeSubInfoStyle: CSSProperties = {
-  fontSize: "13px",
-  color: "#64748b",
-  marginTop: "4px",
-};
-
-const summaryChipWrapStyle: CSSProperties = {
-  display: "flex",
-  gap: "10px",
-  flexWrap: "wrap",
-  alignItems: "stretch",
-};
-
-const summaryChipStyle: CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: "16px",
-  padding: "10px 14px",
-  minWidth: "100px",
-};
-
-const summaryChipLabelStyle: CSSProperties = {
-  fontSize: "11px",
-  color: "#64748b",
-  textTransform: "uppercase",
-  fontWeight: 700,
-  marginBottom: "4px",
-};
-
-const summaryChipValueStyle: CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 800,
-  color: "#0f172a",
-};
-
-const dayGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "12px",
-};
-
-const dayGridMobileStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: "12px",
-};
-
-const cardTopRowStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "10px",
-  marginBottom: "8px",
-};
-
-const dayCardTitleStyle: CSSProperties = {
-  fontSize: "14px",
-  fontWeight: 800,
-  color: "#111827",
-};
-
-const dayCardDateStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#64748b",
-};
-
-const statusPillStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "4px 8px",
-  borderRadius: "999px",
-  fontWeight: 800,
-  fontSize: "11px",
-  marginBottom: "10px",
-};
-
-const specialLabelStyle: CSSProperties = {
-  fontSize: "11px",
-  fontWeight: 700,
-  color: "#b91c1c",
-  marginBottom: "8px",
-};
-
-const timeBigStyle: CSSProperties = {
-  fontSize: "16px",
-  fontWeight: 800,
-  color: "#111827",
-  marginBottom: "6px",
-};
-
-const subInfoStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#475569",
-  marginBottom: "8px",
-};
-
-const noteTextStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#475569",
-};
-
-const notePlaceholderStyle: CSSProperties = {
-  fontSize: "12px",
-  color: "#94a3b8",
-};
-
-const panelTitleStyle: CSSProperties = {
-  margin: "0 0 16px 0",
-  fontSize: "22px",
-  color: "#0f172a",
-};
-
-const tableShellStyle: CSSProperties = {
-  overflowX: "auto",
-};
-
-const modernTableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  minWidth: "920px",
-};
-
-const modernThStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "14px 16px",
-  background: "#f8fafc",
-  color: "#475569",
-  fontSize: "13px",
-  fontWeight: 800,
-  borderBottom: "1px solid #e2e8f0",
-};
-
-const modernTdStyle: CSSProperties = {
-  padding: "14px 16px",
-  borderBottom: "1px solid #eef2f7",
-  color: "#111827",
-  fontSize: "14px",
-  verticalAlign: "middle",
-};
-
-const emptyStateStyle: CSSProperties = {
   padding: "28px",
-  borderRadius: "20px",
-  background: "#ffffff",
-  border: "1px dashed #cbd5e1",
-  color: "#64748b",
-};
-
-const loginPageStyle: CSSProperties = {
-  minHeight: "100vh",
-  background: "linear-gradient(135deg, #eaf2ff 0%, #f8fbff 100%)",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+  marginBottom: "20px",
   display: "flex",
+  justifyContent: "space-between",
   alignItems: "center",
-  justifyContent: "center",
-  padding: "24px",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
+  gap: "20px",
+  flexWrap: "wrap",
 };
 
-const loginShellStyle: CSSProperties = {
-  width: "100%",
-  maxWidth: "1080px",
-  display: "grid",
-  gridTemplateColumns: "1fr 480px",
-  gap: "24px",
-  alignItems: "stretch",
-};
-
-const loginShellMobileStyle: CSSProperties = {
-  width: "100%",
-  maxWidth: "520px",
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: "18px",
-  alignItems: "stretch",
-};
-
-const loginBrandBlockStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #0f274d 0%, #153869 100%)",
-  borderRadius: "32px",
-  color: "#ffffff",
-  padding: "36px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-  boxShadow: "0 20px 50px rgba(15,39,77,0.22)",
-};
-
-const loginBrandLogoStyle: CSSProperties = {
-  width: "64px",
-  height: "64px",
+const warningCardStyle: CSSProperties = {
+  background: "#fff7ed",
+  border: "1px solid #fdba74",
+  color: "#9a3412",
   borderRadius: "18px",
-  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 800,
-  fontSize: "24px",
-  marginBottom: "18px",
+  padding: "16px 18px",
+  marginBottom: "20px",
 };
 
-const loginBrandTitleStyle: CSSProperties = {
-  fontSize: "38px",
-  fontWeight: 800,
-  margin: "0 0 10px 0",
+const eyebrowStyle: CSSProperties = {
+  color: "#2563eb",
+  fontWeight: "bold",
+  fontSize: "13px",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
 };
 
-const loginBrandTextStyle: CSSProperties = {
-  margin: 0,
-  color: "#cbd5e1",
-  fontSize: "16px",
-  lineHeight: 1.6,
-  maxWidth: "420px",
+const statsGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "15px",
+  marginBottom: "20px",
 };
 
-const loginCardStyle: CSSProperties = {
-  background: "#ffffff",
-  borderRadius: "32px",
-  padding: "34px",
-  boxShadow: "0 20px 50px rgba(15,23,42,0.10)",
-  border: "1px solid #e8edf5",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
+const statCardStyle: CSSProperties = {
+  background: "white",
+  borderRadius: "22px",
+  padding: "20px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
 };
 
-const loginTitleStyle: CSSProperties = {
-  fontSize: "30px",
-  color: "#0f172a",
-  margin: "6px 0 10px 0",
+const dashboardActionsGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: "16px",
 };
 
-const loginSubTextStyle: CSSProperties = {
-  color: "#64748b",
-  margin: "0 0 24px 0",
+const quickActionCardStyle: CSSProperties = {
+  background: "white",
+  borderRadius: "22px",
+  padding: "20px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
 };
 
-const loginButtonStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-  color: "#ffffff",
-  padding: "14px 18px",
-  fontWeight: 800,
-  cursor: "pointer",
-  boxShadow: "0 10px 24px rgba(37,99,235,0.22)",
-};
-
-const loadingPageStyle: CSSProperties = {
-  minHeight: "100vh",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  background: "#f4f7fb",
-  fontFamily: 'Inter, Arial, "Segoe UI", Roboto, Helvetica, sans-serif',
-};
-
-const loadingCardStyle: CSSProperties = {
-  background: "#ffffff",
-  padding: "24px 30px",
-  borderRadius: "20px",
-  boxShadow: "0 10px 30px rgba(15,23,42,0.08)",
-};
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: "8px",
-  fontWeight: 700,
-  color: "#334155",
-};
-
-const smallInputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 10px",
-  borderRadius: "10px",
-  border: "1px solid #dbe3ef",
-  fontSize: "12px",
-  background: "#fff",
-  color: "#111827",
-  marginBottom: "6px",
+const filtersGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "12px",
 };
 
 const actionsWrapStyle: CSSProperties = {
@@ -4041,12 +3453,52 @@ const actionsWrapStyle: CSSProperties = {
   flexWrap: "wrap",
 };
 
-const eyebrowStyle: CSSProperties = {
-  color: "#2563eb",
-  fontWeight: 800,
+const labelStyle: CSSProperties = {
+  display: "block",
+  marginBottom: "8px",
+  fontWeight: "bold",
+  color: "#111",
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px",
+  borderRadius: "14px",
+  border: "1px solid #d6dae1",
+  fontSize: "16px",
+  background: "#fff",
+  color: "#111",
+};
+
+const smallInputStyle: CSSProperties = {
+  width: "100%",
+  padding: "6px",
+  borderRadius: "10px",
+  border: "1px solid #d6dae1",
   fontSize: "12px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
+  background: "#fff",
+  color: "#111",
+  marginBottom: "6px",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  padding: "11px 16px",
+  borderRadius: "12px",
+  border: "none",
+  background: "#2563eb",
+  color: "white",
+  fontWeight: "bold",
+  cursor: "pointer",
+  boxShadow: "0 8px 20px rgba(37,99,235,0.25)",
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "11px 16px",
+  borderRadius: "12px",
+  border: "1px solid #d6dae1",
+  background: "white",
+  color: "#111",
+  cursor: "pointer",
 };
 
 const dangerButtonStyle: CSSProperties = {
@@ -4056,7 +3508,94 @@ const dangerButtonStyle: CSSProperties = {
   background: "#dc2626",
   color: "white",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: "bold",
+};
+
+const thStyle: CSSProperties = {
+  textAlign: "center",
+  padding: "12px",
+  border: "1px solid #d6dae1",
+  color: "#111",
+  fontWeight: "bold",
+  background: "#f3f4f6",
+};
+
+const nameCellStyle: CSSProperties = {
+  padding: "12px",
+  border: "1px solid #d6dae1",
+  fontWeight: "bold",
+  background: "#fff",
+  minWidth: "140px",
+};
+
+const tableCellStyle: CSSProperties = {
+  padding: "8px",
+  border: "1px solid #d6dae1",
+  textAlign: "center",
+  verticalAlign: "middle",
+};
+
+const editCellStyle: CSSProperties = {
+  padding: "8px",
+  border: "1px solid #d6dae1",
+  verticalAlign: "top",
+  minWidth: "180px",
+  background: "#fff",
+};
+
+const hoursCellStyle: CSSProperties = {
+  padding: "12px",
+  border: "1px solid #d6dae1",
+  textAlign: "center",
+  fontWeight: "bold",
+  background: "#f9fafb",
+  minWidth: "90px",
+};
+
+const loadingPageStyle: CSSProperties = {
+  minHeight: "100vh",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  background: "linear-gradient(180deg, #eef4ff 0%, #f7f9fc 100%)",
+  fontFamily: "Arial, sans-serif",
+};
+
+const loadingCardStyle: CSSProperties = {
+  background: "white",
+  padding: "24px 30px",
+  borderRadius: "20px",
+  boxShadow: "0 12px 34px rgba(15,23,42,0.08)",
+};
+
+const loginPageStyle: CSSProperties = {
+  minHeight: "100vh",
+  background: "linear-gradient(180deg, #eef4ff 0%, #f7f9fc 100%)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  padding: "20px",
+  fontFamily: "Arial, sans-serif",
+  color: "#111",
+};
+
+const loginCardStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: "460px",
+  background: "white",
+  borderRadius: "28px",
+  padding: "34px",
+  boxShadow: "0 18px 44px rgba(15,23,42,0.12)",
+};
+
+const statusBadgeBlue: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  fontWeight: "bold",
+  fontSize: "12px",
 };
 
 const statusBadgeGray: CSSProperties = {
@@ -4065,7 +3604,7 @@ const statusBadgeGray: CSSProperties = {
   borderRadius: "999px",
   background: "#e5e7eb",
   color: "#374151",
-  fontWeight: 800,
+  fontWeight: "bold",
   fontSize: "12px",
 };
 
@@ -4075,6 +3614,59 @@ const statusBadgeGreen: CSSProperties = {
   borderRadius: "999px",
   background: "#dcfce7",
   color: "#15803d",
-  fontWeight: 800,
+  fontWeight: "bold",
   fontSize: "12px",
+};
+
+const statusBadgeOrange: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#ffedd5",
+  color: "#c2410c",
+  fontWeight: "bold",
+  fontSize: "12px",
+};
+
+const statusBadgeYellow: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#fef3c7",
+  color: "#a16207",
+  fontWeight: "bold",
+  fontSize: "12px",
+};
+
+const statusBadgeRed: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: "#fee2e2",
+  color: "#b91c1c",
+  fontWeight: "bold",
+  fontSize: "12px",
+};
+
+const summaryMiniBoxStyle: CSSProperties = {
+  background: "#ffffff",
+  border: "1px solid #dbe2ea",
+  borderRadius: "16px",
+  padding: "10px 14px",
+  minWidth: "100px",
+  boxShadow: "0 4px 10px rgba(15,23,42,0.04)",
+};
+
+const summaryMiniLabelStyle: CSSProperties = {
+  fontSize: "11px",
+  color: "#6b7280",
+  marginBottom: "4px",
+  textTransform: "uppercase",
+  fontWeight: "bold",
+};
+
+const summaryMiniValueStyle: CSSProperties = {
+  fontSize: "18px",
+  fontWeight: "bold",
+  color: "#111",
 };
