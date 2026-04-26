@@ -15,7 +15,8 @@ type EmploymentType =
   | "Teilzeit"
   | "Minijob"
   | "Shop Manager"
-  | "Praktikant";
+  | "Praktikant"
+  | "Inhaber";
 type EmploymentFilter = EmploymentType | "Alle";
 type ShiftStatus =
   | "ARBEIT"
@@ -383,6 +384,7 @@ export default function Home() {
     if (value === "Minijob") return "Minijob";
     if (value === "Shop Manager") return "Shop Manager";
     if (value === "Praktikant") return "Praktikant";
+    if (value === "Inhaber") return "Inhaber";
     if (value === "admin") return "Shop Manager";
     return "Vollzeit";
   }
@@ -597,6 +599,14 @@ export default function Home() {
   function isAushilfe(employeeId: string) {
     const employee = employees.find((e) => e.id === employeeId);
     return employee?.employmentType === "Minijob";
+  }
+
+  function isNoHourEmployee(employeeId: string) {
+    const employee = employees.find((e) => e.id === employeeId);
+
+    if (!employee) return false;
+
+    return employee.employmentType === "Inhaber";
   }
 
   async function handleLogin() {
@@ -839,7 +849,7 @@ export default function Home() {
       return;
     }
 
-    if (filteredEmployees.length === 0) {
+    if (weeklyPlanEmployees.length === 0) {
       alert("Keine sichtbaren Mitarbeiter vorhanden.");
       return;
     }
@@ -1031,6 +1041,8 @@ export default function Home() {
   function calculatePreviewShiftMinutes(shift?: Shift) {
     if (!shift) return 0;
 
+    if (isNoHourEmployee(shift.employeeId)) return 0;
+
     if (shift.status === "FEIERTAG") {
       return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
     }
@@ -1054,6 +1066,8 @@ export default function Home() {
 
   function calculateStoredShiftMinutes(shift?: Shift) {
     if (!shift) return 0;
+
+    if (isNoHourEmployee(shift.employeeId)) return 0;
 
     if (shift.status === "FEIERTAG") {
       return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
@@ -1164,7 +1178,11 @@ export default function Home() {
     const result: Record<string, number> = {};
 
     for (const employee of employees) {
-      result[employee.id] = Math.round((employee.weeklyTargetHours || 0) * 60);
+      if (isNoHourEmployee(employee.id)) {
+        result[employee.id] = 0;
+      } else {
+        result[employee.id] = Math.round((employee.weeklyTargetHours || 0) * 60);
+      }
     }
 
     return result;
@@ -1196,8 +1214,20 @@ export default function Home() {
     });
   }, [employees, searchTerm, employmentFilter]);
 
+  const weeklyPlanEmployees = useMemo(() => {
+    const list = [...filteredEmployees];
+
+    if (!linkedEmployeeId) return list;
+
+    return list.sort((a, b) => {
+      if (a.id === linkedEmployeeId) return -1;
+      if (b.id === linkedEmployeeId) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [filteredEmployees, linkedEmployeeId]);
+
   const monthlyOverview = useMemo(() => {
-    return filteredEmployees.map((employee) => {
+    return weeklyPlanEmployees.map((employee) => {
       const plannedMinutes = shifts
         .filter(
           (shift) =>
@@ -2163,6 +2193,7 @@ export default function Home() {
                 <option value="Minijob">Minijob</option>
                 <option value="Shop Manager">Shop Manager</option>
                 <option value="Praktikant">Praktikant</option>
+                  <option value="Inhaber">Inhaber</option>
               </select>
             </div>
 
@@ -2195,10 +2226,10 @@ export default function Home() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-            {filteredEmployees.length === 0 ? (
+            {weeklyPlanEmployees.length === 0 ? (
               <div style={emptyStateStyle}>Keine Mitarbeiter gefunden.</div>
             ) : (
-              filteredEmployees.map((employee) => {
+              weeklyPlanEmployees.map((employee) => {
                 const isOwnRow = employee.id === linkedEmployeeId;
 
                 return (
@@ -2693,6 +2724,7 @@ export default function Home() {
                   <option value="Minijob">Minijob</option>
                   <option value="Shop Manager">Shop Manager</option>
                   <option value="Praktikant">Praktikant</option>
+                  <option value="Inhaber">Inhaber</option>
                 </select>
               </div>
 
@@ -2761,6 +2793,7 @@ export default function Home() {
                 <option value="Minijob">Minijob</option>
                 <option value="Shop Manager">Shop Manager</option>
                 <option value="Praktikant">Praktikant</option>
+                  <option value="Inhaber">Inhaber</option>
               </select>
             </div>
           </div>
@@ -2779,14 +2812,14 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEmployees.length === 0 ? (
+                {weeklyPlanEmployees.length === 0 ? (
                   <tr>
                     <td style={modernTdStyle} colSpan={7}>
                       Keine Mitarbeiter gefunden.
                     </td>
                   </tr>
                 ) : (
-                  filteredEmployees.map((employee) => {
+                  weeklyPlanEmployees.map((employee) => {
                     const vacation = vacationSummaryByEmployee[employee.id] || {
                       total: 0,
                       used: 0,
