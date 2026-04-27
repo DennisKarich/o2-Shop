@@ -597,6 +597,105 @@ export default function Home() {
     }));
   }
 
+  function applyQuickShift(employeeId: string, day: DayKey, preset: "full" | "early" | "late" | "free") {
+    if (preset === "free") {
+      updateCell(employeeId, day, {
+        status: "FREI",
+        start: "10:00",
+        end: "18:00",
+        note: "",
+      });
+      return;
+    }
+
+    if (preset === "early") {
+      updateCell(employeeId, day, {
+        status: "ARBEIT",
+        start: "10:00",
+        end: "14:00",
+        location: "PF",
+        note: "",
+      });
+      return;
+    }
+
+    if (preset === "late") {
+      updateCell(employeeId, day, {
+        status: "ARBEIT",
+        start: "14:00",
+        end: "18:00",
+        location: "PF",
+        note: "",
+      });
+      return;
+    }
+
+    updateCell(employeeId, day, {
+      status: "ARBEIT",
+      start: day === "saturday" ? "10:00" : "10:00",
+      end: day === "saturday" ? "17:00" : "18:00",
+      location: "PF",
+      note: "",
+    });
+  }
+
+  function clearEmployeeWeekLocal(employeeId: string) {
+    setWeeklyEdits((prev) => {
+      const next = { ...prev };
+
+      for (const day of dayOrder) {
+        next[getCellKey(employeeId, day)] = emptyEdit();
+      }
+
+      return next;
+    });
+  }
+
+  function applyStandardEmployeeWeekLocal(employeeId: string) {
+    setWeeklyEdits((prev) => {
+      const next = { ...prev };
+
+      for (const day of dayOrder) {
+        if (day === "sunday") {
+          next[getCellKey(employeeId, day)] = {
+            status: "FREI",
+            start: "10:00",
+            end: "18:00",
+            location: "PF",
+            note: "Sonntag",
+          };
+        } else {
+          next[getCellKey(employeeId, day)] = {
+            status: "ARBEIT",
+            start: "10:00",
+            end: day === "saturday" ? "17:00" : "18:00",
+            location: "PF",
+            note: "",
+          };
+        }
+      }
+
+      return next;
+    });
+  }
+
+  function clearAllVisibleWeekLocal() {
+    const confirmed = window.confirm("Alle sichtbaren Einträge in dieser Woche leeren? Gespeichert wird erst nach Klick auf Speichern.");
+    if (!confirmed) return;
+
+    setWeeklyEdits((prev) => {
+      const next = { ...prev };
+
+      for (const employee of filteredEmployees) {
+        for (const day of dayOrder) {
+          next[getCellKey(employee.id, day)] = emptyEdit();
+        }
+      }
+
+      return next;
+    });
+  }
+
   function isAushilfe(employeeId: string) {
     const employee = employees.find((e) => e.id === employeeId);
     return employee?.employmentType === "Minijob";
@@ -938,6 +1037,24 @@ export default function Home() {
     };
 
     return shiftIsoDate(weekStartIso, dayIndexMap[day]);
+  }
+
+  function getDayKeyFromIso(dateIso: string): DayKey {
+    const [year, month, day] = dateIso.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    const dayIndex = date.getDay();
+
+    const map: Record<number, DayKey> = {
+      0: "sunday",
+      1: "monday",
+      2: "tuesday",
+      3: "wednesday",
+      4: "thursday",
+      5: "friday",
+      6: "saturday",
+    };
+
+    return map[dayIndex] ?? "monday";
   }
 
   const selectedVacationYear = useMemo(() => {
@@ -1368,6 +1485,61 @@ export default function Home() {
     () => liveStampOverview.filter((item) => !item.isActive).length,
     [liveStampOverview]
   );
+
+  const todayPlannedShifts = useMemo(() => {
+    return shifts
+      .filter((shift) => getShiftDateIso(shift.weekStart, shift.day) === todayIso)
+      .map((shift) => ({
+        shift,
+        employee: employees.find((employee) => employee.id === shift.employeeId),
+      }))
+      .filter((item) => Boolean(item.employee));
+  }, [shifts, employees, todayIso]);
+
+  const todayWorkingList = useMemo(() => {
+    return todayPlannedShifts.filter((item) => item.shift.status === "ARBEIT");
+  }, [todayPlannedShifts]);
+
+  const todayAbsentList = useMemo(() => {
+    return todayPlannedShifts.filter((item) => item.shift.status !== "ARBEIT");
+  }, [todayPlannedShifts]);
+
+  const openEntriesWithoutClockOut = useMemo(() => {
+    return timeEntries.filter((entry) => !entry.clockOut);
+  }, [timeEntries]);
+
+  const employeesWithoutPlanThisWeek = useMemo(() => {
+    return employees.filter((employee) => {
+      if (isNoHourEmployee(employee.id)) return false;
+      return (employeeWeekMinutes[employee.id] || 0) === 0;
+    });
+  }, [employees, employeeWeekMinutes]);
+
+  const nextOwnShift = useMemo(() => {
+    if (!currentEmployee?.id) return null;
+
+    const nowTime = getCurrentTimeHHMM();
+
+    const upcoming = shifts
+      .filter((shift) => shift.employeeId === currentEmployee.id)
+      .filter((shift) => shift.status === "ARBEIT")
+      .map((shift) => ({
+        shift,
+        dateIso: getShiftDateIso(shift.weekStart, shift.day),
+      }))
+      .filter((item) => {
+        if (item.dateIso > todayIso) return true;
+        if (item.dateIso === todayIso && item.shift.end >= nowTime) return true;
+        return false;
+      })
+      .sort((a, b) => {
+        const dateCompare = a.dateIso.localeCompare(b.dateIso);
+        if (dateCompare !== 0) return dateCompare;
+        return a.shift.start.localeCompare(b.shift.start);
+      });
+
+    return upcoming[0] ?? null;
+  }, [shifts, currentEmployee?.id, todayIso]);
 
   async function handleClockIn() {
     if (!currentEmployee?.id) {
@@ -1816,6 +1988,24 @@ export default function Home() {
       ? vacationSummaryByEmployee[currentEmployee.id]
       : undefined;
 
+    const dashboardWarnings: string[] = [];
+
+    if (!currentEmployee) {
+      dashboardWarnings.push("Dein Login ist noch keinem Mitarbeiter zugeordnet.");
+    }
+
+    if (openEntriesWithoutClockOut.length > 0) {
+      dashboardWarnings.push(`${openEntriesWithoutClockOut.length} offene Stempelzeit ohne Ausstempeln.`);
+    }
+
+    if (employeesWithoutPlanThisWeek.length > 0) {
+      dashboardWarnings.push(`${employeesWithoutPlanThisWeek.length} Mitarbeiter ohne geplante Stunden in der gewählten Woche.`);
+    }
+
+    if (todayWorkingList.length === 0) {
+      dashboardWarnings.push("Für heute ist noch niemand mit ARBEIT geplant.");
+    }
+
     return (
       <>
         {!currentEmployee ? (
@@ -1852,18 +2042,22 @@ export default function Home() {
         </div>
 
         <div style={dashboardGridStyle}>
-          <InfoCard title="Status">
+          <InfoCard title="Heute geplant">
+            {todayWorkingList.length}
+          </InfoCard>
+          <InfoCard title="Jetzt eingestempelt">
+            {activeStampedCount}
+          </InfoCard>
+          <InfoCard title="Dein Status">
             {clockedIn
               ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
               : "Nicht eingestempelt"}
           </InfoCard>
+          <InfoCard title="Deine Zeit heute">
+            {formatHours(todayStampedMinutes)}
+          </InfoCard>
           <InfoCard title="Geplante Stunden diese Woche">
             {formatHours(employeeWeekMinutes[currentEmployee?.id || ""] || 0)}
-          </InfoCard>
-          <InfoCard title="Sollstunden diese Woche">
-            {formatHours(
-              weeklyTargetMinutesByEmployee[currentEmployee?.id || ""] || 0
-            )}
           </InfoCard>
           <InfoCard title="Überstunden / Minusstunden">
             {formatDifference(
@@ -1878,6 +2072,79 @@ export default function Home() {
               ? `${currentVacationSummary.remaining} Tage`
               : "0 Tage"}
           </InfoCard>
+        </div>
+
+        <div style={dashboardTwoColumnStyle}>
+          <div style={contentPanelStyle}>
+            <div style={panelHeaderRowStyle}>
+              <div>
+                <h3 style={panelTitleStyle}>Heute im Shop</h3>
+                <p style={panelSubTextStyle}>Geplante Schichten und Abwesenheiten für heute.</p>
+              </div>
+              <span style={softBadgeStyle}>{todayIso}</span>
+            </div>
+
+            <div style={todayListStyle}>
+              {todayWorkingList.length === 0 ? (
+                <div style={emptyMiniStateStyle}>Heute ist noch niemand mit Arbeit geplant.</div>
+              ) : (
+                todayWorkingList.map((item) => (
+                  <div key={`${item.shift.employeeId}_${item.shift.day}_${item.shift.start}`} style={todayListItemStyle}>
+                    <div>
+                      <div style={todayEmployeeNameStyle}>{item.employee?.name}</div>
+                      <div style={todayEmployeeMetaStyle}>
+                        {item.shift.location} · {item.shift.start} - {item.shift.end}
+                      </div>
+                    </div>
+                    {getOpenTimeEntryForEmployee(item.shift.employeeId) ? (
+                      <span style={statusBadgeGreen}>DRIN</span>
+                    ) : (
+                      <span style={statusBadgeGray}>OFFEN</span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {todayAbsentList.length > 0 ? (
+              <div style={absentWrapStyle}>
+                {todayAbsentList.map((item) => (
+                  <span key={`${item.shift.employeeId}_${item.shift.status}`} style={absencePillStyle}>
+                    {item.employee?.name}: {item.shift.status}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div style={contentPanelStyle}>
+            <div style={panelHeaderRowStyle}>
+              <div>
+                <h3 style={panelTitleStyle}>Hinweise</h3>
+                <p style={panelSubTextStyle}>Schnelle Kontrolle für Admin und Mitarbeiter.</p>
+              </div>
+              <span style={softBadgeStyle}>{dashboardWarnings.length}</span>
+            </div>
+
+            <div style={nextShiftBoxStyle}>
+              <div style={infoCardLabelStyle}>Deine nächste Schicht</div>
+              <div style={nextShiftValueStyle}>
+                {nextOwnShift
+                  ? `${nextOwnShift.dateIso} · ${nextOwnShift.shift.start}-${nextOwnShift.shift.end} · ${nextOwnShift.shift.location}`
+                  : "Keine kommende Schicht gefunden"}
+              </div>
+            </div>
+
+            <div style={warningListStyle}>
+              {dashboardWarnings.length === 0 ? (
+                <div style={successMiniStateStyle}>Alles sieht gut aus.</div>
+              ) : (
+                dashboardWarnings.map((warning) => (
+                  <div key={warning} style={warningItemStyle}>{warning}</div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
 
         <div style={quickActionsGridStyle}>
@@ -2415,6 +2682,13 @@ export default function Home() {
               placeholder="Notiz"
               style={editorInputStyle}
             />
+
+            <div style={editorQuickRowStyle}>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "full")} style={editorQuickButtonStyle}>10-18</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "early")} style={editorQuickButtonStyle}>10-14</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "late")} style={editorQuickButtonStyle}>14-18</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "free")} style={editorQuickButtonStyle}>Frei</button>
+            </div>
           </div>
         </td>
       );
@@ -2444,6 +2718,9 @@ export default function Home() {
                 style={secondaryActionButtonStyle}
               >
                 Vorwoche kopieren
+              </button>
+              <button onClick={clearAllVisibleWeekLocal} style={dangerButtonStyle}>
+                Alle sichtbaren leeren
               </button>
               <button onClick={saveAllVisibleWeeks} style={primaryActionButtonStyle}>
                 Alle sichtbaren speichern
@@ -2573,12 +2850,26 @@ export default function Home() {
                         </td>
 
                         <td style={editorActionTdStyle}>
-                          <button
-                            onClick={() => saveEmployeeWeek(employee.id)}
-                            style={primaryActionButtonStyle}
-                          >
-                            Speichern
-                          </button>
+                          <div style={editorActionStackStyle}>
+                            <button
+                              onClick={() => applyStandardEmployeeWeekLocal(employee.id)}
+                              style={secondaryActionButtonStyle}
+                            >
+                              Standard
+                            </button>
+                            <button
+                              onClick={() => clearEmployeeWeekLocal(employee.id)}
+                              style={secondaryActionButtonStyle}
+                            >
+                              Leeren
+                            </button>
+                            <button
+                              onClick={() => saveEmployeeWeek(employee.id)}
+                              style={primaryActionButtonStyle}
+                            >
+                              Speichern
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -3315,15 +3606,15 @@ export default function Home() {
     );
   }
 
-  const sidebarItems: { key: AppTab; label: string }[] = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "wochenplan", label: "Wochenplan" },
+  const sidebarItems: { key: AppTab; label: string; icon: string }[] = [
+    { key: "dashboard", label: "Dashboard", icon: "⌂" },
+    { key: "wochenplan", label: "Wochenplan", icon: "▦" },
     ...(authRole === "admin"
-      ? [{ key: "planeditor" as AppTab, label: "Plan bearbeiten" }]
+      ? [{ key: "planeditor" as AppTab, label: "Plan bearbeiten", icon: "✎" }]
       : []),
-    { key: "stempelzeiten", label: "Stempelzeiten" },
-    { key: "monatsuebersicht", label: "Monatsübersicht" },
-    { key: "mitarbeiter", label: "Mitarbeiter" },
+    { key: "stempelzeiten", label: "Stempelzeiten", icon: "◷" },
+    { key: "monatsuebersicht", label: "Monatsübersicht", icon: "▤" },
+    { key: "mitarbeiter", label: "Mitarbeiter", icon: "◎" },
   ];
 
   return (
@@ -3382,7 +3673,10 @@ export default function Home() {
                       : "none",
                 }}
               >
-                {item.label}
+                <span style={sidebarButtonInnerStyle}>
+                  <span style={sidebarButtonIconStyle}>{item.icon}</span>
+                  <span>{item.label}</span>
+                </span>
               </button>
             ))}
           </nav>
@@ -3458,6 +3752,24 @@ export default function Home() {
           {activeTab === "monatsuebersicht" ? renderMonatsuebersicht() : null}
         </div>
       </section>
+
+      {isMobile ? (
+        <nav style={mobileBottomNavStyle}>
+          {sidebarItems.slice(0, 4).map((item) => (
+            <button
+              key={`mobile_${item.key}`}
+              onClick={() => setActiveTab(item.key)}
+              style={{
+                ...mobileBottomNavButtonStyle,
+                color: activeTab === item.key ? "#2563eb" : "#64748b",
+              }}
+            >
+              <span style={mobileBottomNavIconStyle}>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      ) : null}
     </main>
   );
 }
@@ -4514,4 +4826,209 @@ const editorActionTdStyle: CSSProperties = {
   borderBottom: "1px solid #eef2f7",
   verticalAlign: "top",
   minWidth: "140px",
+};
+
+const sidebarButtonInnerStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "12px",
+};
+
+const sidebarButtonIconStyle: CSSProperties = {
+  width: "24px",
+  height: "24px",
+  borderRadius: "9px",
+  background: "rgba(255,255,255,0.10)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "14px",
+};
+
+const mobileBottomNavStyle: CSSProperties = {
+  position: "fixed",
+  left: "12px",
+  right: "12px",
+  bottom: "12px",
+  zIndex: 30,
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: "6px",
+  padding: "8px",
+  background: "rgba(255,255,255,0.96)",
+  border: "1px solid #e2e8f0",
+  borderRadius: "22px",
+  boxShadow: "0 18px 45px rgba(15,23,42,0.18)",
+  backdropFilter: "blur(10px)",
+};
+
+const mobileBottomNavButtonStyle: CSSProperties = {
+  border: "none",
+  background: "transparent",
+  borderRadius: "16px",
+  padding: "8px 4px",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "4px",
+  fontSize: "10px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const mobileBottomNavIconStyle: CSSProperties = {
+  fontSize: "17px",
+  lineHeight: 1,
+};
+
+const dashboardTwoColumnStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: "16px",
+};
+
+const panelHeaderRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: "12px",
+  marginBottom: "16px",
+};
+
+const panelSubTextStyle: CSSProperties = {
+  margin: "4px 0 0 0",
+  color: "#64748b",
+  fontSize: "14px",
+};
+
+const softBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "999px",
+  padding: "7px 10px",
+  background: "#eff6ff",
+  color: "#2563eb",
+  fontSize: "12px",
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
+
+const todayListStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+};
+
+const todayListItemStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "12px",
+  padding: "13px 14px",
+  borderRadius: "16px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+};
+
+const todayEmployeeNameStyle: CSSProperties = {
+  fontSize: "15px",
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const todayEmployeeMetaStyle: CSSProperties = {
+  fontSize: "13px",
+  color: "#64748b",
+  marginTop: "3px",
+};
+
+const absentWrapStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px",
+  marginTop: "14px",
+};
+
+const absencePillStyle: CSSProperties = {
+  display: "inline-flex",
+  borderRadius: "999px",
+  padding: "7px 10px",
+  background: "#f1f5f9",
+  color: "#475569",
+  fontSize: "12px",
+  fontWeight: 800,
+};
+
+const emptyMiniStateStyle: CSSProperties = {
+  padding: "14px",
+  borderRadius: "16px",
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
+  fontSize: "14px",
+};
+
+const successMiniStateStyle: CSSProperties = {
+  padding: "14px",
+  borderRadius: "16px",
+  background: "#ecfdf3",
+  border: "1px solid #bbf7d0",
+  color: "#15803d",
+  fontWeight: 800,
+  fontSize: "14px",
+};
+
+const nextShiftBoxStyle: CSSProperties = {
+  padding: "14px",
+  borderRadius: "18px",
+  background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
+  border: "1px solid #dbeafe",
+  marginBottom: "14px",
+};
+
+const nextShiftValueStyle: CSSProperties = {
+  color: "#0f172a",
+  fontSize: "17px",
+  fontWeight: 900,
+  marginTop: "6px",
+};
+
+const warningListStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "9px",
+};
+
+const warningItemStyle: CSSProperties = {
+  padding: "12px 13px",
+  borderRadius: "15px",
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  color: "#9a3412",
+  fontSize: "14px",
+  fontWeight: 700,
+};
+
+const editorQuickRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: "5px",
+};
+
+const editorQuickButtonStyle: CSSProperties = {
+  border: "1px solid #dbe3ef",
+  borderRadius: "9px",
+  background: "#f8fafc",
+  color: "#334155",
+  padding: "6px 4px",
+  fontSize: "10px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const editorActionStackStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
 };
