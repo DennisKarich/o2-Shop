@@ -543,10 +543,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (employees.length > 0 && !correctionEmployeeId) {
-      setCorrectionEmployeeId(employees[0].id);
+    if (employees.length === 0) return;
+
+    const selectedEmployeeStillExists = employees.some(
+      (employee) => employee.id === correctionEmployeeId
+    );
+
+    if (!correctionEmployeeId || !selectedEmployeeStillExists) {
+      const linkedEmployeeExists = linkedEmployeeId
+        ? employees.some((employee) => employee.id === linkedEmployeeId)
+        : false;
+
+      if (linkedEmployeeId && linkedEmployeeExists) {
+        setCorrectionEmployeeId(linkedEmployeeId);
+      } else {
+        setCorrectionEmployeeId(employees[0].id);
+      }
     }
-  }, [employees, correctionEmployeeId]);
+  }, [employees, correctionEmployeeId, linkedEmployeeId]);
 
   useEffect(() => {
     const next: Record<string, WeeklyEdit> = {};
@@ -1753,6 +1767,18 @@ export default function Home() {
     await loadTimeEntries();
     alert("Manuelle Buchung gespeichert.");
   }
+
+  const correctionEmployeeOptions = useMemo(() => {
+    const list = [...employees];
+
+    if (!linkedEmployeeId) return list;
+
+    return list.sort((a, b) => {
+      if (a.id === linkedEmployeeId) return -1;
+      if (b.id === linkedEmployeeId) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [employees, linkedEmployeeId]);
 
   const displayedTimeEntries = useMemo(() => {
     if (!correctionEmployeeId) return [];
@@ -3037,7 +3063,7 @@ export default function Home() {
                   onChange={(e) => setCorrectionEmployeeId(e.target.value)}
                   style={modernInputStyle}
                 >
-                  {employees.map((employee) => (
+                  {correctionEmployeeOptions.map((employee) => (
                     <option key={employee.id} value={employee.id}>
                       {employee.name}
                     </option>
@@ -3104,7 +3130,7 @@ export default function Home() {
                 onChange={(e) => setCorrectionEmployeeId(e.target.value)}
                 style={modernInputStyle}
               >
-                {employees.map((employee) => (
+                {correctionEmployeeOptions.map((employee) => (
                   <option key={employee.id} value={employee.id}>
                     {employee.name}
                   </option>
