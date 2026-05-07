@@ -611,7 +611,20 @@ export default function Home() {
     }));
   }
 
-  function applyQuickShift(employeeId: string, day: DayKey, preset: "full" | "early" | "late" | "free") {
+  function applyQuickShift(
+    employeeId: string,
+    day: DayKey,
+    preset:
+      | "full"
+      | "full1830"
+      | "late1130"
+      | "short17"
+      | "early"
+      | "late"
+      | "free"
+      | "vacation"
+      | "sick"
+  ) {
     if (preset === "free") {
       updateCell(employeeId, day, {
         status: "FREI",
@@ -622,32 +635,46 @@ export default function Home() {
       return;
     }
 
-    if (preset === "early") {
+    if (preset === "vacation") {
       updateCell(employeeId, day, {
-        status: "ARBEIT",
+        status: "URLAUB",
         start: "10:00",
-        end: "14:00",
+        end: "18:00",
         location: "PF",
-        note: "",
+        note: "Urlaub",
       });
       return;
     }
 
-    if (preset === "late") {
+    if (preset === "sick") {
       updateCell(employeeId, day, {
-        status: "ARBEIT",
-        start: "14:00",
+        status: "KRANK",
+        start: "10:00",
         end: "18:00",
         location: "PF",
-        note: "",
+        note: "Krank",
       });
       return;
     }
+
+    const presets: Record<
+      "full" | "full1830" | "late1130" | "short17" | "early" | "late",
+      { start: string; end: string }
+    > = {
+      full: { start: "10:00", end: "18:00" },
+      full1830: { start: "10:00", end: "18:30" },
+      late1130: { start: "11:30", end: "20:00" },
+      short17: { start: "10:00", end: "17:00" },
+      early: { start: "10:00", end: "14:00" },
+      late: { start: "14:00", end: "18:00" },
+    };
+
+    const selected = presets[preset];
 
     updateCell(employeeId, day, {
       status: "ARBEIT",
-      start: day === "saturday" ? "10:00" : "10:00",
-      end: day === "saturday" ? "17:00" : "18:00",
+      start: selected.start,
+      end: selected.end,
       location: "PF",
       note: "",
     });
@@ -2628,6 +2655,25 @@ export default function Home() {
       );
     }
 
+    function getEditorStatusCellStyle(status: EditableShiftStatus): CSSProperties {
+      switch (status) {
+        case "ARBEIT":
+          return { background: "#eff6ff" };
+        case "FREI":
+          return { background: "#f8fafc" };
+        case "URLAUB":
+          return { background: "#ecfdf3" };
+        case "KRANK":
+          return { background: "#fff7ed" };
+        case "SCHULUNG":
+          return { background: "#fefce8" };
+        case "FEIERTAG":
+          return { background: "#fef2f2" };
+        default:
+          return { background: "#ffffff" };
+      }
+    }
+
     function renderEditorCell(employee: Employee, day: DayKey) {
       const key = getCellKey(employee.id, day);
       const edit = weeklyEdits[key] ?? emptyEdit();
@@ -2635,7 +2681,7 @@ export default function Home() {
       const specialLabel = getSpecialDayLabel(dateIso, day);
 
       return (
-        <td key={`${employee.id}_${day}`} style={editorTdStyle}>
+        <td key={`${employee.id}_${day}`} style={{ ...editorTdStyle, ...getEditorStatusCellStyle(edit.status) }}>
           <div style={editorCellBoxStyle}>
             <div style={editorDayMiniStyle}>{getDateForDay(day)}</div>
             {specialLabel ? <div style={editorSpecialStyle}>{specialLabel}</div> : null}
@@ -2711,9 +2757,14 @@ export default function Home() {
 
             <div style={editorQuickRowStyle}>
               <button type="button" onClick={() => applyQuickShift(employee.id, day, "full")} style={editorQuickButtonStyle}>10-18</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "full1830")} style={editorQuickButtonStyle}>10-18:30</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "late1130")} style={editorQuickButtonStyle}>11:30-20</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "short17")} style={editorQuickButtonStyle}>10-17</button>
               <button type="button" onClick={() => applyQuickShift(employee.id, day, "early")} style={editorQuickButtonStyle}>10-14</button>
               <button type="button" onClick={() => applyQuickShift(employee.id, day, "late")} style={editorQuickButtonStyle}>14-18</button>
               <button type="button" onClick={() => applyQuickShift(employee.id, day, "free")} style={editorQuickButtonStyle}>Frei</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "vacation")} style={editorQuickButtonStyle}>Urlaub</button>
+              <button type="button" onClick={() => applyQuickShift(employee.id, day, "sick")} style={editorQuickButtonStyle}>Krank</button>
             </div>
           </div>
         </td>
@@ -2923,6 +2974,31 @@ export default function Home() {
             </button>
           }
         />
+
+        <div style={personalStampCardStyle}>
+          <div>
+            <div style={modernHeroEyebrowStyle}>Deine Stempelzeit</div>
+            <h3 style={personalStampTitleStyle}>
+              {clockedIn
+                ? `Eingestempelt seit ${openTimeEntry?.clockIn ?? ""}`
+                : "Du bist aktuell nicht eingestempelt"}
+            </h3>
+            <p style={personalStampTextStyle}>
+              Heute: {formatHours(todayStampedMinutes)} · Monat: {formatHours(monthStampedMinutes)}
+            </p>
+          </div>
+
+          <button
+            onClick={clockedIn ? handleClockOut : handleClockIn}
+            style={{
+              ...primaryActionButtonStyle,
+              background: clockedIn ? "#dc2626" : "#16a34a",
+              width: isMobile ? "100%" : undefined,
+            }}
+          >
+            {clockedIn ? "Jetzt ausstempeln" : "Jetzt einstempeln"}
+          </button>
+        </div>
 
         <div style={dashboardGridStyle}>
           <InfoCard title="Heute eingestempelt">{activeStampedCount}</InfoCard>
@@ -5038,7 +5114,7 @@ const warningItemStyle: CSSProperties = {
 
 const editorQuickRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, 1fr)",
+  gridTemplateColumns: "repeat(3, 1fr)",
   gap: "5px",
 };
 
@@ -5057,4 +5133,31 @@ const editorActionStackStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "8px",
+};
+
+const personalStampCardStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #ecfdf3 0%, #ffffff 72%)",
+  border: "1px solid #bbf7d0",
+  borderRadius: "26px",
+  padding: "24px",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "18px",
+  flexWrap: "wrap",
+  boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
+};
+
+const personalStampTitleStyle: CSSProperties = {
+  margin: "6px 0 8px 0",
+  color: "#0f172a",
+  fontSize: "26px",
+  fontWeight: 900,
+};
+
+const personalStampTextStyle: CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  fontSize: "15px",
+  fontWeight: 700,
 };
