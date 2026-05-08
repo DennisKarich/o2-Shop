@@ -1279,7 +1279,9 @@ export default function Home() {
       return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
     }
 
-    if (shift.status === "URLAUB") return 0;
+    if (shift.status === "URLAUB") {
+      return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
+    }
     if (shift.status !== "ARBEIT") return 0;
     if (!shift.start || !shift.end) return 0;
 
@@ -1305,7 +1307,9 @@ export default function Home() {
       return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
     }
 
-    if (shift.status === "URLAUB") return 0;
+    if (shift.status === "URLAUB") {
+      return isAushilfe(shift.employeeId) ? 0 : FEIERTAG_MINUTES;
+    }
     if (shift.status !== "ARBEIT") return 0;
     if (!shift.start || !shift.end) return 0;
 
@@ -2977,7 +2981,17 @@ export default function Home() {
       );
     }
 
-    const locationFilter = getPlanViewLocationFilter();
+    const visiblePlannedMinutes = filteredEmployees.reduce(
+      (sum, employee) => sum + (employeeWeekMinutes[employee.id] || 0),
+      0
+    );
+
+    const visibleTargetMinutes = filteredEmployees.reduce(
+      (sum, employee) => sum + (weeklyTargetMinutesByEmployee[employee.id] || 0),
+      0
+    );
+
+    const visibleDifferenceMinutes = visiblePlannedMinutes - visibleTargetMinutes;
 
     return (
       <>
@@ -3123,6 +3137,42 @@ export default function Home() {
             </div>
 
             {renderSelectedCellEditor()}
+          </div>
+
+          <div style={weekMatrixTotalsStyle}>
+            {filteredEmployees.map((employee) => {
+              const planned = employeeWeekMinutes[employee.id] || 0;
+              const target = weeklyTargetMinutesByEmployee[employee.id] || 0;
+              const diff = planned - target;
+
+              return (
+                <div key={`total_${employee.id}`} style={weekMatrixTotalCardStyle}>
+                  <div>
+                    <div style={weekMatrixTotalNameStyle}>{employee.name}</div>
+                    <div style={weekMatrixTotalMetaStyle}>{employee.employmentType}</div>
+                  </div>
+                  <div style={weekMatrixTotalNumbersStyle}>
+                    <span>Ist: <strong>{formatHours(planned)}</strong></span>
+                    <span>Soll: <strong>{formatHours(target)}</strong></span>
+                    <span>
+                      Diff.:{" "}
+                      <strong
+                        style={{
+                          color:
+                            diff > 0
+                              ? "#15803d"
+                              : diff < 0
+                              ? "#dc2626"
+                              : "#0f172a",
+                        }}
+                      >
+                        {formatDifference(diff)}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div style={dayEditorHintStyle}>
@@ -5869,4 +5919,49 @@ const weekEditorActionStackStyle: CSSProperties = {
   flexDirection: "column",
   gap: "10px",
   marginTop: "16px",
+};
+
+const weekMatrixTotalsStyle: CSSProperties = {
+  marginTop: "16px",
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: "12px",
+};
+
+const weekMatrixTotalCardStyle: CSSProperties = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: "18px",
+  padding: "14px 16px",
+  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "12px",
+  color: "#64748b",
+  fontSize: "13px",
+  fontWeight: 800,
+};
+
+const weekMatrixTotalNameStyle: CSSProperties = {
+  color: "#0f172a",
+  fontSize: "14px",
+  fontWeight: 900,
+};
+
+const weekMatrixTotalMetaStyle: CSSProperties = {
+  color: "#64748b",
+  fontSize: "12px",
+  fontWeight: 700,
+  marginTop: "2px",
+};
+
+const weekMatrixTotalNumbersStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-end",
+  gap: "4px",
+  color: "#475569",
+  fontSize: "12px",
+  whiteSpace: "nowrap",
 };
