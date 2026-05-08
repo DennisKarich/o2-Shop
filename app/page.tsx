@@ -33,6 +33,7 @@ type AppTab =
   | "stempelzeiten"
   | "mitarbeiter"
   | "monatsuebersicht";
+type PlanEditorView = "split" | "all" | "pf" | "ka";
 type UserRole = "admin" | "mitarbeiter" | null;
 
 type DayKey =
@@ -50,6 +51,7 @@ type Employee = {
   employmentType: EmploymentType;
   vacationDaysTotal: number;
   weeklyTargetHours: number;
+  sortOrder: number;
 };
 
 type Shift = {
@@ -348,6 +350,13 @@ export default function Home() {
     useState<EmploymentFilter>("Alle");
   const [weekStart, setWeekStart] = useState(getCurrentMondayIso());
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthPrefix());
+  const [planEditorView, setPlanEditorView] = useState<PlanEditorView>("all");
+  const [planEditorLocation, setPlanEditorLocation] = useState<Location>("PF");
+  const [planEditorDay, setPlanEditorDay] = useState<DayKey>("monday");
+  const [selectedPlanCell, setSelectedPlanCell] = useState<{
+    employeeId: string;
+    day: DayKey;
+  } | null>(null);
 
   const [correctionEmployeeId, setCorrectionEmployeeId] = useState("");
   const [manualEntryDate, setManualEntryDate] = useState(getTodayIso());
@@ -391,13 +400,29 @@ export default function Home() {
   }
 
   function mapEmployeeRow(row: any): Employee {
+    const employmentType = mapEmploymentType(row.role ?? "");
+
     return {
       id: String(row.id),
       name: row.name ?? "",
-      employmentType: mapEmploymentType(row.role ?? ""),
+      employmentType,
       vacationDaysTotal: Number(row.remaining_vacation_days ?? 0),
       weeklyTargetHours: Number(row.target_weekly_hours ?? 40),
+      sortOrder:
+        row.sort_order === null || row.sort_order === undefined
+          ? employmentType === "Inhaber"
+            ? 900000 + Number(row.id ?? 0)
+            : Number(row.id ?? 0) * 10
+          : Number(row.sort_order),
     };
+  }
+
+  function sortEmployeesByOrder(list: Employee[]) {
+    return [...list].sort((a, b) => {
+      const orderDiff = (a.sortOrder || 0) - (b.sortOrder || 0);
+      if (orderDiff !== 0) return orderDiff;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   function mapShiftRow(row: any): Shift {
@@ -448,7 +473,7 @@ export default function Home() {
       return;
     }
 
-    setEmployees((data ?? []).map(mapEmployeeRow));
+    setEmployees(sortEmployeesByOrder((data ?? []).map(mapEmployeeRow)));
   }
 
   async function loadShifts() {
@@ -623,7 +648,8 @@ export default function Home() {
       | "late"
       | "free"
       | "vacation"
-      | "sick"
+      | "sick",
+    location: Location = "PF"
   ) {
     if (preset === "free") {
       updateCell(employeeId, day, {
@@ -640,7 +666,7 @@ export default function Home() {
         status: "URLAUB",
         start: "10:00",
         end: "18:00",
-        location: "PF",
+        location,
         note: "Urlaub",
       });
       return;
@@ -651,7 +677,7 @@ export default function Home() {
         status: "KRANK",
         start: "10:00",
         end: "18:00",
-        location: "PF",
+        location,
         note: "Krank",
       });
       return;
@@ -675,7 +701,7 @@ export default function Home() {
       status: "ARBEIT",
       start: selected.start,
       end: selected.end,
-      location: "PF",
+      location,
       note: "",
     });
   }
@@ -736,6 +762,52 @@ export default function Home() {
       return next;
     });
   }
+
+  async function moveEmployeeInOrder(employeeId: string, direction: "up" | "down") {
+    if (authRole !== "admin") {
+      alert("Nur Admin darf die Reihenfolge ändern.");
+      return;
+    }
+
+    const ordered = sortEmployeesByOrder(employees).map((employee, index) => ({
+      ...employee,
+      sortOrder: (index + 1) * 10,
+    }));
+
+    const currentIndex = ordered.findIndex((employee) => employee.id === employeeId);
+    if (currentIndex < 0) return;
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= ordered.length) return;
+
+    const reordered = [...ordered];
+    const currentEmployee = reordered[currentIndex];
+    reordered[currentIndex] = reordered[targetIndex];
+    reordered[targetIndex] = currentEmployee;
+
+    const normalized = reordered.map((employee, index) => ({
+      ...employee,
+      sortOrder: (index + 1) * 10,
+    }));
+
+    setEmployees(normalized);
+
+    for (const employee of normalized) {
+      const { error } = await supabase
+        .from("employees")
+        .update({ sort_order: employee.sortOrder })
+        .eq("id", Number(employee.id));
+
+      if (error) {
+        alert("Fehler beim Speichern der Reihenfolge: " + error.message);
+        await loadEmployees();
+        return;
+      }
+    }
+
+    await loadEmployees();
+  }
+
 
   function isAushilfe(employeeId: string) {
     const employee = employees.find((e) => e.id === employeeId);
@@ -832,6 +904,7 @@ export default function Home() {
         role: newEmploymentType,
         remaining_vacation_days: Number(newVacation) || 0,
         target_weekly_hours: Number(newWeeklyTarget) || 0,
+        sort_order: (employees.length + 1) * 10,
       },
     ]);
 
@@ -1360,28 +1433,30 @@ export default function Home() {
   }, [employees, employeeWeekMinutes, weeklyTargetMinutesByEmployee]);
 
   const filteredEmployees = useMemo(() => {
-    return employees.filter((employee) => {
-      const matchesSearch = employee.name
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
+    return sortEmployeesByOrder(
+      employees.filter((employee) => {
+        const matchesSearch = employee.name
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase());
 
-      const matchesEmployment =
-        employmentFilter === "Alle" ||
-        employee.employmentType === employmentFilter;
+        const matchesEmployment =
+          employmentFilter === "Alle" ||
+          employee.employmentType === employmentFilter;
 
-      return matchesSearch && matchesEmployment;
-    });
+        return matchesSearch && matchesEmployment;
+      })
+    );
   }, [employees, searchTerm, employmentFilter]);
 
   const weeklyPlanEmployees = useMemo(() => {
-    const list = [...filteredEmployees];
+    const list = sortEmployeesByOrder(filteredEmployees);
 
     if (!linkedEmployeeId) return list;
 
     return list.sort((a, b) => {
       if (a.id === linkedEmployeeId) return -1;
       if (b.id === linkedEmployeeId) return 1;
-      return a.name.localeCompare(b.name);
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
     });
   }, [filteredEmployees, linkedEmployeeId]);
 
@@ -1796,14 +1871,14 @@ export default function Home() {
   }
 
   const correctionEmployeeOptions = useMemo(() => {
-    const list = [...employees];
+    const list = sortEmployeesByOrder(employees);
 
     if (!linkedEmployeeId) return list;
 
     return list.sort((a, b) => {
       if (a.id === linkedEmployeeId) return -1;
       if (b.id === linkedEmployeeId) return 1;
-      return a.name.localeCompare(b.name);
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
     });
   }, [employees, linkedEmployeeId]);
 
@@ -2655,145 +2730,269 @@ export default function Home() {
       );
     }
 
-    function getEditorStatusCellStyle(status: EditableShiftStatus): CSSProperties {
-      switch (status) {
-        case "ARBEIT":
-          return { background: "#eff6ff" };
+    const selectedCellEmployee = selectedPlanCell
+      ? employees.find((employee) => employee.id === selectedPlanCell.employeeId)
+      : undefined;
+
+    const selectedCellEdit = selectedPlanCell
+      ? weeklyEdits[getCellKey(selectedPlanCell.employeeId, selectedPlanCell.day)] ??
+        getDefaultEditForDate(getShiftDateIso(weekStart, selectedPlanCell.day), selectedPlanCell.day)
+      : undefined;
+
+    function getLocationLabel(location: Location) {
+      return location === "PF" ? "Pforzheim" : "Karlsruhe";
+    }
+
+    function getPlanViewLocationFilter(): Location | null {
+      if (planEditorView === "pf") return "PF";
+      if (planEditorView === "ka") return "KA";
+      return null;
+    }
+
+    function getCompactCellStyle(edit: WeeklyEdit): CSSProperties {
+      if (edit.status === "ARBEIT") {
+        return {
+          background: edit.location === "KA" ? "#f5f3ff" : "#eff6ff",
+          borderColor: edit.location === "KA" ? "#ddd6fe" : "#bfdbfe",
+          color: "#0f172a",
+        };
+      }
+
+      switch (edit.status) {
         case "FREI":
-          return { background: "#f8fafc" };
+          return { background: "#f8fafc", borderColor: "#e2e8f0", color: "#475569" };
         case "URLAUB":
-          return { background: "#ecfdf3" };
+          return { background: "#ecfdf3", borderColor: "#bbf7d0", color: "#166534" };
         case "KRANK":
-          return { background: "#fff7ed" };
+          return { background: "#fff7ed", borderColor: "#fed7aa", color: "#c2410c" };
         case "SCHULUNG":
-          return { background: "#fefce8" };
+          return { background: "#fefce8", borderColor: "#fde68a", color: "#a16207" };
         case "FEIERTAG":
-          return { background: "#fef2f2" };
+          return { background: "#fef2f2", borderColor: "#fecaca", color: "#b91c1c" };
         default:
-          return { background: "#ffffff" };
+          return { background: "#ffffff", borderColor: "#e2e8f0", color: "#94a3b8" };
       }
     }
 
-    function renderEditorCell(employee: Employee, day: DayKey) {
+    function getCellMiniText(edit: WeeklyEdit, locationFilter: Location | null) {
+      if (edit.status === "LEER") {
+        return {
+          title: "-",
+          detail: "leer",
+          muted: true,
+        };
+      }
+
+      if (edit.status === "ARBEIT") {
+        if (locationFilter && edit.location !== locationFilter) {
+          return {
+            title: edit.location,
+            detail: `${edit.start}-${edit.end}`,
+            muted: true,
+          };
+        }
+
+        return {
+          title: edit.location,
+          detail: `${edit.start}-${edit.end}`,
+          muted: false,
+        };
+      }
+
+      return {
+        title: edit.status,
+        detail: edit.status === "FEIERTAG" ? "Feiertag" : "",
+        muted: false,
+      };
+    }
+
+    function renderCompactCell(employee: Employee, day: DayKey) {
       const key = getCellKey(employee.id, day);
-      const edit = weeklyEdits[key] ?? emptyEdit();
-      const dateIso = getShiftDateIso(weekStart, day);
-      const specialLabel = getSpecialDayLabel(dateIso, day);
+      const edit = weeklyEdits[key] ?? getDefaultEditForDate(getShiftDateIso(weekStart, day), day);
+      const locationFilter = getPlanViewLocationFilter();
+      const mini = getCellMiniText(edit, locationFilter);
+      const isSelected =
+        selectedPlanCell?.employeeId === employee.id && selectedPlanCell?.day === day;
+      const isFilteredOtherLocation =
+        locationFilter && edit.status === "ARBEIT" && edit.location !== locationFilter;
 
       return (
-        <td key={`${employee.id}_${day}`} style={{ ...editorTdStyle, ...getEditorStatusCellStyle(edit.status) }}>
-          <div style={editorCellBoxStyle}>
-            <div style={editorDayMiniStyle}>{getDateForDay(day)}</div>
-            {specialLabel ? <div style={editorSpecialStyle}>{specialLabel}</div> : null}
-
-            <select
-              value={edit.status}
-              onChange={(e) =>
-                updateCell(employee.id, day, {
-                  status: e.target.value as EditableShiftStatus,
-                })
-              }
-              style={editorInputStyle}
-            >
-              <option value="LEER">-</option>
-              <option value="ARBEIT">ARBEIT</option>
-              <option value="FREI">FREI</option>
-              <option value="FEIERTAG">FEIERTAG</option>
-              <option value="URLAUB">URLAUB</option>
-              <option value="KRANK">KRANK</option>
-              <option value="SCHULUNG">SCHULUNG</option>
-            </select>
-
-            {edit.status === "ARBEIT" ? (
-              <>
-                <div style={editorTimeRowStyle}>
-                  <input
-                    type="time"
-                    value={edit.start}
-                    onChange={(e) =>
-                      updateCell(employee.id, day, {
-                        start: e.target.value,
-                      })
-                    }
-                    style={editorInputStyle}
-                  />
-                  <input
-                    type="time"
-                    value={edit.end}
-                    onChange={(e) =>
-                      updateCell(employee.id, day, {
-                        end: e.target.value,
-                      })
-                    }
-                    style={editorInputStyle}
-                  />
-                </div>
-
-                <select
-                  value={edit.location}
-                  onChange={(e) =>
-                    updateCell(employee.id, day, {
-                      location: e.target.value as Location,
-                    })
-                  }
-                  style={editorInputStyle}
-                >
-                  <option value="PF">PF</option>
-                  <option value="KA">KA</option>
-                </select>
-              </>
-            ) : null}
-
-            <input
-              value={edit.note}
-              onChange={(e) =>
-                updateCell(employee.id, day, {
-                  note: e.target.value,
-                })
-              }
-              placeholder="Notiz"
-              style={editorInputStyle}
-            />
-
-            <div style={editorQuickRowStyle}>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "full")} style={editorQuickButtonStyle}>10-18</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "full1830")} style={editorQuickButtonStyle}>10-18:30</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "late1130")} style={editorQuickButtonStyle}>11:30-20</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "short17")} style={editorQuickButtonStyle}>10-17</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "early")} style={editorQuickButtonStyle}>10-14</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "late")} style={editorQuickButtonStyle}>14-18</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "free")} style={editorQuickButtonStyle}>Frei</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "vacation")} style={editorQuickButtonStyle}>Urlaub</button>
-              <button type="button" onClick={() => applyQuickShift(employee.id, day, "sick")} style={editorQuickButtonStyle}>Krank</button>
-            </div>
-          </div>
-        </td>
+        <button
+          key={`${employee.id}_${day}`}
+          onClick={() => setSelectedPlanCell({ employeeId: employee.id, day })}
+          style={{
+            ...weekMatrixCellStyle,
+            ...getCompactCellStyle(edit),
+            opacity: isFilteredOtherLocation ? 0.45 : 1,
+            outline: isSelected ? "3px solid rgba(37,99,235,0.32)" : "none",
+          }}
+        >
+          <span style={weekMatrixCellTitleStyle}>{mini.title}</span>
+          <span style={weekMatrixCellDetailStyle}>{mini.detail}</span>
+          {edit.note ? <span style={weekMatrixNoteDotStyle}>●</span> : null}
+        </button>
       );
     }
+
+    function renderSelectedCellEditor() {
+      if (!selectedPlanCell || !selectedCellEmployee || !selectedCellEdit) {
+        return (
+          <div style={weekEditorSidePanelStyle}>
+            <div style={emptyMiniStateStyle}>
+              Wähle links eine Zelle aus, um eine Schicht zu bearbeiten.
+            </div>
+          </div>
+        );
+      }
+
+      const dateIso = getShiftDateIso(weekStart, selectedPlanCell.day);
+      const special = getSpecialDayLabel(dateIso, selectedPlanCell.day);
+      const edit = selectedCellEdit;
+
+      return (
+        <div style={weekEditorSidePanelStyle}>
+          <div style={weekEditorPanelHeaderStyle}>
+            <div>
+              <div style={filterInfoTitleStyle}>Ausgewählte Schicht</div>
+              <h3 style={weekEditorPanelTitleStyle}>{selectedCellEmployee.name}</h3>
+              <p style={weekEditorPanelSubStyle}>
+                {dayLabels[selectedPlanCell.day]} · {getDateForDay(selectedPlanCell.day)}
+              </p>
+              {special ? <div style={specialLabelStyle}>{special}</div> : null}
+            </div>
+          </div>
+
+          <div style={weekEditorFormStyle}>
+            <div style={filterBoxStyle}>
+              <label style={filterLabelStyle}>Status</label>
+              <select
+                value={edit.status}
+                onChange={(e) =>
+                  updateCell(selectedCellEmployee.id, selectedPlanCell.day, {
+                    status: e.target.value as EditableShiftStatus,
+                  })
+                }
+                style={modernInputStyle}
+              >
+                <option value="LEER">-</option>
+                <option value="ARBEIT">ARBEIT</option>
+                <option value="FREI">FREI</option>
+                <option value="FEIERTAG">FEIERTAG</option>
+                <option value="URLAUB">URLAUB</option>
+                <option value="KRANK">KRANK</option>
+                <option value="SCHULUNG">SCHULUNG</option>
+              </select>
+            </div>
+
+            <div style={weekEditorTwoColsStyle}>
+              <div style={filterBoxStyle}>
+                <label style={filterLabelStyle}>Von</label>
+                <input
+                  type="time"
+                  value={edit.start}
+                  onChange={(e) =>
+                    updateCell(selectedCellEmployee.id, selectedPlanCell.day, {
+                      status: "ARBEIT",
+                      start: e.target.value,
+                    })
+                  }
+                  style={modernInputStyle}
+                />
+              </div>
+              <div style={filterBoxStyle}>
+                <label style={filterLabelStyle}>Bis</label>
+                <input
+                  type="time"
+                  value={edit.end}
+                  onChange={(e) =>
+                    updateCell(selectedCellEmployee.id, selectedPlanCell.day, {
+                      status: "ARBEIT",
+                      end: e.target.value,
+                    })
+                  }
+                  style={modernInputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={filterBoxStyle}>
+              <label style={filterLabelStyle}>Standort</label>
+              <select
+                value={edit.location}
+                onChange={(e) =>
+                  updateCell(selectedCellEmployee.id, selectedPlanCell.day, {
+                    location: e.target.value as Location,
+                    status: edit.status === "LEER" ? "ARBEIT" : edit.status,
+                  })
+                }
+                style={modernInputStyle}
+              >
+                <option value="PF">Pforzheim</option>
+                <option value="KA">Karlsruhe</option>
+              </select>
+            </div>
+
+            <div style={filterBoxStyle}>
+              <label style={filterLabelStyle}>Notiz nur Admin</label>
+              <input
+                value={edit.note}
+                onChange={(e) =>
+                  updateCell(selectedCellEmployee.id, selectedPlanCell.day, {
+                    note: e.target.value,
+                  })
+                }
+                placeholder="Interne Notiz"
+                style={modernInputStyle}
+              />
+            </div>
+          </div>
+
+          <div style={weekEditorQuickGridStyle}>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "full", edit.location)} style={editorQuickButtonStyle}>10-18</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "full1830", edit.location)} style={editorQuickButtonStyle}>10-18:30</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "late1130", edit.location)} style={editorQuickButtonStyle}>11:30-20</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "short17", edit.location)} style={editorQuickButtonStyle}>10-17</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "early", edit.location)} style={editorQuickButtonStyle}>10-14</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "late", edit.location)} style={editorQuickButtonStyle}>14-18</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "free", edit.location)} style={editorQuickButtonStyle}>Frei</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "vacation", edit.location)} style={editorQuickButtonStyle}>Urlaub</button>
+            <button onClick={() => applyQuickShift(selectedCellEmployee.id, selectedPlanCell.day, "sick", edit.location)} style={editorQuickButtonStyle}>Krank</button>
+          </div>
+
+          <div style={weekEditorActionStackStyle}>
+            <button
+              onClick={() => saveEmployeeWeek(selectedCellEmployee.id)}
+              style={primaryActionButtonStyle}
+            >
+              Mitarbeiter-Woche speichern
+            </button>
+            <button
+              onClick={() => clearEmployeeWeekLocal(selectedCellEmployee.id)}
+              style={secondaryActionButtonStyle}
+            >
+              Woche von Mitarbeiter leeren
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const locationFilter = getPlanViewLocationFilter();
 
     return (
       <>
         <PageHeader
           title="Plan bearbeiten"
-          subtitle={`${calendarWeekLabel} · Admin-Editor in Tabellenansicht`}
+          subtitle={`${calendarWeekLabel} · Wochenmatrix mit Zell-Editor`}
           right={
             <div style={actionsWrapStyle}>
-              <button
-                onClick={() => setWeekStart((prev) => shiftIsoDate(prev, -7))}
-                style={secondaryActionButtonStyle}
-              >
+              <button onClick={() => setWeekStart((prev) => shiftIsoDate(prev, -7))} style={secondaryActionButtonStyle}>
                 Vorwoche
               </button>
-              <button
-                onClick={() => setWeekStart((prev) => shiftIsoDate(prev, 7))}
-                style={secondaryActionButtonStyle}
-              >
+              <button onClick={() => setWeekStart((prev) => shiftIsoDate(prev, 7))} style={secondaryActionButtonStyle}>
                 Nächste Woche
               </button>
-              <button
-                onClick={copyPreviousWeekToCurrent}
-                style={secondaryActionButtonStyle}
-              >
+              <button onClick={copyPreviousWeekToCurrent} style={secondaryActionButtonStyle}>
                 Vorwoche kopieren
               </button>
               <button onClick={clearAllVisibleWeekLocal} style={dangerButtonStyle}>
@@ -2822,9 +3021,7 @@ export default function Home() {
               <label style={filterLabelStyle}>Anstellungsart</label>
               <select
                 value={employmentFilter}
-                onChange={(e) =>
-                  setEmploymentFilter(e.target.value as EmploymentFilter)
-                }
+                onChange={(e) => setEmploymentFilter(e.target.value as EmploymentFilter)}
                 style={modernInputStyle}
               >
                 <option value="Alle">Alle</option>
@@ -2842,118 +3039,94 @@ export default function Home() {
               <input
                 type="week"
                 value={weekInputValue}
-                onChange={(e) =>
-                  setWeekStart(getMondayIsoFromWeekInput(e.target.value))
-                }
+                onChange={(e) => setWeekStart(getMondayIsoFromWeekInput(e.target.value))}
                 style={modernInputStyle}
               />
             </div>
 
             <div style={filterInfoStyle}>
-              <div style={filterInfoTitleStyle}>Bearbeitung</div>
+              <div style={filterInfoTitleStyle}>Ausgewählt</div>
               <div style={filterInfoValueStyle}>{calendarWeekLabel}</div>
               <div style={filterInfoSubStyle}>Woche ab {weekStart}</div>
             </div>
           </div>
 
-          <div style={{ ...actionsWrapStyle, marginBottom: "18px" }}>
-            <button onClick={exportWeekCsv} style={secondaryActionButtonStyle}>
-              Excel / CSV
-            </button>
-            <button onClick={printWeekPlan} style={secondaryActionButtonStyle}>
-              Drucken / PDF
-            </button>
+          <div style={viewToggleWrapStyle}>
+            {[
+              { key: "all", label: "Alle Standorte" },
+              { key: "pf", label: "Nur PF" },
+              { key: "ka", label: "Nur KA" },
+            ].map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setPlanEditorView(item.key as PlanEditorView)}
+                style={{
+                  ...viewToggleButtonStyle,
+                  background: planEditorView === item.key ? "#2563eb" : "#ffffff",
+                  color: planEditorView === item.key ? "#ffffff" : "#0f172a",
+                  borderColor: planEditorView === item.key ? "#2563eb" : "#dbe3ef",
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
 
-          <div style={tableShellStyle}>
-            <table style={editorTableStyle}>
-              <thead>
-                <tr>
-                  <th style={editorStickyThStyle}>Mitarbeiter</th>
-                  {dayOrder.map((day) => (
-                    <th key={day} style={editorThStyle}>
-                      <div>{dayLabels[day]}</div>
-                      <div style={editorThDateStyle}>{getDateForDay(day)}</div>
-                    </th>
-                  ))}
-                  <th style={editorThStyle}>Summe</th>
-                  <th style={editorThStyle}>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div style={weekMatrixLayoutStyle}>
+            <div style={weekMatrixPanelStyle}>
+              <div style={weekMatrixHeaderGridStyle}>
+                <div style={weekMatrixNameHeaderStyle}>Mitarbeiter</div>
+                {dayOrder.map((day) => {
+                  const dateIso = getShiftDateIso(weekStart, day);
+                  const special = getSpecialDayLabel(dateIso, day);
+                  return (
+                    <div key={day} style={weekMatrixDayHeaderStyle}>
+                      <strong>{dayLabels[day].slice(0, 2)}</strong>
+                      <span>{getDateForDay(day).slice(0, 5)}</span>
+                      {special ? <em>{special}</em> : null}
+                    </div>
+                  );
+                })}
+                <div style={weekMatrixSumHeaderStyle}>Summe</div>
+              </div>
+
+              <div style={weekMatrixRowsStyle}>
                 {filteredEmployees.length === 0 ? (
-                  <tr>
-                    <td style={modernTdStyle} colSpan={10}>
-                      Keine Mitarbeiter gefunden.
-                    </td>
-                  </tr>
+                  <div style={emptyStateStyle}>Keine Mitarbeiter gefunden.</div>
                 ) : (
                   filteredEmployees.map((employee) => {
                     const diff = weeklyDifferenceByEmployee[employee.id] || 0;
-
                     return (
-                      <tr key={employee.id}>
-                        <td style={editorStickyTdStyle}>
-                          <div style={editorEmployeeNameStyle}>{employee.name}</div>
-                          <div style={editorEmployeeMetaStyle}>
-                            {employee.employmentType}
+                      <div key={employee.id} style={weekMatrixRowGridStyle}>
+                        <div style={weekMatrixEmployeeCellStyle}>
+                          <div>
+                            <div style={weekMatrixEmployeeNameStyle}>{employee.name}</div>
+                            <div style={weekMatrixEmployeeMetaStyle}>{employee.employmentType}</div>
                           </div>
-                        </td>
+                          <div style={weekMatrixMoveButtonsStyle}>
+                            <button onClick={() => moveEmployeeInOrder(employee.id, "up")} style={miniIconButtonStyle}>↑</button>
+                            <button onClick={() => moveEmployeeInOrder(employee.id, "down")} style={miniIconButtonStyle}>↓</button>
+                          </div>
+                        </div>
 
-                        {dayOrder.map((day) => renderEditorCell(employee, day))}
+                        {dayOrder.map((day) => renderCompactCell(employee, day))}
 
-                        <td style={editorSummaryTdStyle}>
-                          <div style={editorSummaryLineStyle}>
-                            <span>Ist</span>
-                            <strong>{formatHours(employeeWeekMinutes[employee.id] || 0)}</strong>
-                          </div>
-                          <div style={editorSummaryLineStyle}>
-                            <span>Soll</span>
-                            <strong>
-                              {formatHours(weeklyTargetMinutesByEmployee[employee.id] || 0)}
-                            </strong>
-                          </div>
-                          <div style={editorSummaryLineStyle}>
-                            <span>Diff.</span>
-                            <strong
-                              style={{
-                                color:
-                                  diff > 0 ? "#15803d" : diff < 0 ? "#dc2626" : "#111827",
-                              }}
-                            >
-                              {formatDifference(diff)}
-                            </strong>
-                          </div>
-                        </td>
-
-                        <td style={editorActionTdStyle}>
-                          <div style={editorActionStackStyle}>
-                            <button
-                              onClick={() => applyStandardEmployeeWeekLocal(employee.id)}
-                              style={secondaryActionButtonStyle}
-                            >
-                              Standard
-                            </button>
-                            <button
-                              onClick={() => clearEmployeeWeekLocal(employee.id)}
-                              style={secondaryActionButtonStyle}
-                            >
-                              Leeren
-                            </button>
-                            <button
-                              onClick={() => saveEmployeeWeek(employee.id)}
-                              style={primaryActionButtonStyle}
-                            >
-                              Speichern
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                        <div style={weekMatrixSumCellStyle}>
+                          <strong>{formatHours(employeeWeekMinutes[employee.id] || 0)}</strong>
+                          <span>{formatDifference(diff)}</span>
+                        </div>
+                      </div>
                     );
                   })
                 )}
-              </tbody>
-            </table>
+              </div>
+            </div>
+
+            {renderSelectedCellEditor()}
+          </div>
+
+          <div style={dayEditorHintStyle}>
+            <strong>So funktioniert es:</strong> Links siehst du die ganze Woche. Klicke eine Tageszelle an und bearbeite sie rechts im Editor. Die Notiz bleibt nur für Admins sichtbar.
           </div>
         </div>
       </>
@@ -5120,12 +5293,12 @@ const editorQuickRowStyle: CSSProperties = {
 
 const editorQuickButtonStyle: CSSProperties = {
   border: "1px solid #dbe3ef",
-  borderRadius: "9px",
-  background: "#f8fafc",
+  borderRadius: "12px",
+  background: "#ffffff",
   color: "#334155",
-  padding: "6px 4px",
-  fontSize: "10px",
-  fontWeight: 900,
+  padding: "10px 8px",
+  fontSize: "12px",
+  fontWeight: 800,
   cursor: "pointer",
 };
 
@@ -5134,6 +5307,7 @@ const editorActionStackStyle: CSSProperties = {
   flexDirection: "column",
   gap: "8px",
 };
+
 
 const personalStampCardStyle: CSSProperties = {
   background: "linear-gradient(135deg, #ecfdf3 0%, #ffffff 72%)",
@@ -5160,4 +5334,539 @@ const personalStampTextStyle: CSSProperties = {
   color: "#475569",
   fontSize: "15px",
   fontWeight: 700,
+};
+
+const viewToggleWrapStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "10px",
+  marginBottom: "18px",
+  padding: "10px",
+  borderRadius: "18px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+};
+
+const viewToggleButtonStyle: CSSProperties = {
+  border: "1px solid #dbe3ef",
+  borderRadius: "14px",
+  padding: "11px 16px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const splitEditorWrapStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "22px",
+};
+
+const editorSectionStyle: CSSProperties = {
+  border: "1px solid #e2e8f0",
+  borderRadius: "24px",
+  overflow: "hidden",
+  background: "#ffffff",
+};
+
+const editorSectionHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "14px",
+  padding: "18px 20px",
+  background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)",
+  borderBottom: "1px solid #e2e8f0",
+};
+
+const editorSectionTitleStyle: CSSProperties = {
+  margin: 0,
+  color: "#0f172a",
+  fontSize: "22px",
+  fontWeight: 900,
+};
+
+const editorSectionSubStyle: CSSProperties = {
+  margin: "5px 0 0 0",
+  color: "#64748b",
+  fontSize: "14px",
+  fontWeight: 700,
+};
+
+const locationBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: "42px",
+  borderRadius: "999px",
+  padding: "8px 12px",
+  background: "#eff6ff",
+  color: "#2563eb",
+  fontWeight: 900,
+  fontSize: "13px",
+};
+
+const editorDayCountStyle: CSSProperties = {
+  marginTop: "6px",
+  display: "inline-flex",
+  borderRadius: "999px",
+  padding: "4px 8px",
+  background: "#e0f2fe",
+  color: "#0369a1",
+  fontSize: "11px",
+  fontWeight: 900,
+};
+
+const foreignShiftBoxStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "7px",
+  padding: "10px",
+  borderRadius: "14px",
+  background: "#ffffff",
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
+  fontSize: "12px",
+};
+
+const dayEditorTopControlsStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "220px 1fr",
+  gap: "16px",
+  marginBottom: "18px",
+};
+
+const dayEditorSegmentStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  padding: "6px",
+  borderRadius: "18px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  gap: "6px",
+};
+
+const dayEditorSegmentButtonStyle: CSSProperties = {
+  border: "1px solid #dbe3ef",
+  borderRadius: "14px",
+  padding: "13px 16px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const dayEditorDayTabsStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(7, 1fr)",
+  padding: "6px",
+  borderRadius: "18px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  gap: "6px",
+};
+
+const dayEditorDayButtonStyle: CSSProperties = {
+  border: "1px solid #dbe3ef",
+  borderRadius: "14px",
+  padding: "13px 10px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const dayEditorInfoBarStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(220px, 260px) minmax(220px, 1fr) minmax(220px, 1fr) minmax(260px, 1.3fr)",
+  gap: "14px",
+  marginBottom: "18px",
+  alignItems: "stretch",
+};
+
+const dayEditorSelectedBoxStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
+  border: "1px solid #dbeafe",
+  borderRadius: "18px",
+  padding: "14px",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+};
+
+const dayEditorSelectedTitleStyle: CSSProperties = {
+  color: "#0f172a",
+  fontWeight: 900,
+  fontSize: "17px",
+  marginTop: "5px",
+};
+
+const dayEditorListStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+};
+
+const dayEditorCardStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "190px minmax(0, 1fr) 160px",
+  gridTemplateAreas: `
+    "employee controls summary"
+    "quick quick actions"
+  `,
+  gap: "12px",
+  alignItems: "stretch",
+  border: "1px solid #e2e8f0",
+  borderRadius: "22px",
+  padding: "14px",
+  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
+  width: "100%",
+  boxSizing: "border-box",
+};
+
+const dayEditorEmployeeBlockStyle: CSSProperties = {
+  gridArea: "employee",
+  display: "flex",
+  alignItems: "center",
+  gap: "12px",
+  minWidth: 0,
+};
+
+const dayEditorAvatarStyle: CSSProperties = {
+  width: "46px",
+  height: "46px",
+  borderRadius: "16px",
+  background: "#dbeafe",
+  color: "#1d4ed8",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const dayEditorEmployeeNameStyle: CSSProperties = {
+  color: "#0f172a",
+  fontSize: "17px",
+  fontWeight: 900,
+};
+
+const dayEditorEmployeeMetaStyle: CSSProperties = {
+  color: "#64748b",
+  fontSize: "13px",
+  marginTop: "3px",
+  fontWeight: 700,
+};
+
+const otherLocationHintStyle: CSSProperties = {
+  marginTop: "6px",
+  color: "#b45309",
+  fontSize: "12px",
+  fontWeight: 800,
+};
+
+const dayEditorMainControlsStyle: CSSProperties = {
+  gridArea: "controls",
+  display: "grid",
+  gridTemplateColumns: "135px minmax(210px, 0.9fr) 70px minmax(160px, 1fr)",
+  gap: "8px",
+  alignItems: "center",
+  minWidth: 0,
+};
+
+const dayEditorStatusSelectStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px 12px",
+  borderRadius: "14px",
+  border: "1px solid #dbe3ef",
+  fontWeight: 900,
+};
+
+const dayEditorTimeWrapStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr auto 1fr",
+  gap: "8px",
+  alignItems: "center",
+};
+
+const dayEditorDashStyle: CSSProperties = {
+  color: "#64748b",
+  fontWeight: 900,
+};
+
+const dayEditorInputStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px 10px",
+  borderRadius: "14px",
+  border: "1px solid #dbe3ef",
+  background: "#ffffff",
+  color: "#111827",
+  fontWeight: 800,
+};
+
+const dayEditorLocationSelectStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px 10px",
+  borderRadius: "14px",
+  border: "1px solid #dbe3ef",
+  background: "#ffffff",
+  color: "#111827",
+  fontWeight: 900,
+};
+
+const dayEditorNoteStyle: CSSProperties = {
+  width: "100%",
+  padding: "12px 12px",
+  borderRadius: "14px",
+  border: "1px solid #dbe3ef",
+  background: "#ffffff",
+  color: "#111827",
+  fontWeight: 700,
+};
+
+const dayEditorQuickWrapStyle: CSSProperties = {
+  gridArea: "quick",
+  display: "grid",
+  gridTemplateColumns: "repeat(9, minmax(72px, 1fr))",
+  gap: "6px",
+  minWidth: 0,
+};
+
+const dayEditorActionsStyle: CSSProperties = {
+  gridArea: "actions",
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: "8px",
+};
+
+const dayEditorSummaryStyle: CSSProperties = {
+  gridArea: "summary",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: "8px",
+  padding: "10px 12px",
+  borderLeft: "1px solid #e2e8f0",
+  background: "#fbfdff",
+  borderRadius: "16px",
+  fontSize: "13px",
+};
+
+const dayEditorHintStyle: CSSProperties = {
+  marginTop: "18px",
+  padding: "14px 16px",
+  borderRadius: "18px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: "14px",
+};
+
+const weekMatrixLayoutStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) 290px",
+  gap: "14px",
+  alignItems: "start",
+};
+
+const weekMatrixPanelStyle: CSSProperties = {
+  minWidth: 0,
+  border: "1px solid #e2e8f0",
+  borderRadius: "22px",
+  overflow: "hidden",
+  background: "#ffffff",
+};
+
+const weekMatrixHeaderGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "170px repeat(7, minmax(92px, 1fr)) 96px",
+  gap: "1px",
+  background: "#e2e8f0",
+};
+
+const weekMatrixRowsStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "1px",
+  background: "#e2e8f0",
+};
+
+const weekMatrixRowGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "170px repeat(7, minmax(92px, 1fr)) 96px",
+  gap: "1px",
+  background: "#e2e8f0",
+};
+
+const weekMatrixNameHeaderStyle: CSSProperties = {
+  background: "#f8fafc",
+  padding: "12px 10px",
+  fontSize: "12px",
+  color: "#475569",
+  fontWeight: 900,
+};
+
+const weekMatrixDayHeaderStyle: CSSProperties = {
+  background: "#f8fafc",
+  padding: "9px 6px",
+  minHeight: "58px",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "2px",
+  fontSize: "12px",
+  color: "#0f172a",
+  textAlign: "center",
+};
+
+const weekMatrixSumHeaderStyle: CSSProperties = {
+  background: "#f8fafc",
+  padding: "12px 8px",
+  fontSize: "12px",
+  color: "#475569",
+  fontWeight: 900,
+  textAlign: "center",
+};
+
+const weekMatrixEmployeeCellStyle: CSSProperties = {
+  background: "#ffffff",
+  padding: "10px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  minWidth: 0,
+};
+
+const weekMatrixEmployeeNameStyle: CSSProperties = {
+  fontSize: "13px",
+  color: "#0f172a",
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const weekMatrixEmployeeMetaStyle: CSSProperties = {
+  fontSize: "11px",
+  color: "#64748b",
+  fontWeight: 700,
+  marginTop: "2px",
+};
+
+const weekMatrixMoveButtonsStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "4px",
+  flexShrink: 0,
+};
+
+const miniIconButtonStyle: CSSProperties = {
+  width: "24px",
+  height: "22px",
+  borderRadius: "8px",
+  border: "1px solid #dbe3ef",
+  background: "#ffffff",
+  color: "#334155",
+  cursor: "pointer",
+  fontWeight: 900,
+  lineHeight: 1,
+};
+
+const weekMatrixCellStyle: CSSProperties = {
+  minHeight: "64px",
+  border: "1px solid #e2e8f0",
+  padding: "7px 5px",
+  cursor: "pointer",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  alignItems: "center",
+  gap: "3px",
+  textAlign: "center",
+  position: "relative",
+  minWidth: 0,
+};
+
+const weekMatrixCellTitleStyle: CSSProperties = {
+  fontSize: "12px",
+  fontWeight: 900,
+  lineHeight: 1.1,
+};
+
+const weekMatrixCellDetailStyle: CSSProperties = {
+  fontSize: "10px",
+  fontWeight: 800,
+  lineHeight: 1.1,
+  color: "inherit",
+};
+
+const weekMatrixNoteDotStyle: CSSProperties = {
+  position: "absolute",
+  top: "4px",
+  right: "5px",
+  color: "#2563eb",
+  fontSize: "8px",
+};
+
+const weekMatrixSumCellStyle: CSSProperties = {
+  background: "#ffffff",
+  padding: "8px",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  alignItems: "center",
+  gap: "3px",
+  fontSize: "11px",
+  color: "#64748b",
+};
+
+const weekEditorSidePanelStyle: CSSProperties = {
+  position: "sticky",
+  top: "18px",
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: "20px",
+  padding: "14px",
+  boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+};
+
+const weekEditorPanelHeaderStyle: CSSProperties = {
+  marginBottom: "16px",
+};
+
+const weekEditorPanelTitleStyle: CSSProperties = {
+  margin: "4px 0 2px 0",
+  color: "#0f172a",
+  fontSize: "18px",
+  fontWeight: 900,
+};
+
+const weekEditorPanelSubStyle: CSSProperties = {
+  margin: 0,
+  color: "#64748b",
+  fontSize: "13px",
+  fontWeight: 700,
+};
+
+const weekEditorFormStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+};
+
+const weekEditorTwoColsStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "10px",
+};
+
+const weekEditorQuickGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, 1fr)",
+  gap: "5px",
+  marginTop: "12px",
+};
+
+const weekEditorActionStackStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  marginTop: "16px",
 };
