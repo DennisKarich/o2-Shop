@@ -1801,7 +1801,7 @@ export default function Home() {
         entry_date: entry.entryDate,
         clock_in: entry.clockIn,
         clock_out: entry.clockOut,
-        manual_override: entry.manualOverride,
+        manual_override: true,
         reason: entry.reason,
       })
       .eq("id", entry.id);
@@ -1813,6 +1813,40 @@ export default function Home() {
 
     await loadTimeEntries();
     alert("Stempelzeit aktualisiert.");
+  }
+
+  async function saveDisplayedTimeEntries() {
+    if (authRole !== "admin") {
+      alert("Nur Admin darf Stempelzeiten korrigieren.");
+      return;
+    }
+
+    if (displayedTimeEntries.length === 0) {
+      alert("Keine Stempelzeiten zum Speichern vorhanden.");
+      return;
+    }
+
+    for (const entry of displayedTimeEntries) {
+      const { error } = await supabase
+        .from("time_entries")
+        .update({
+          entry_date: entry.entryDate,
+          clock_in: entry.clockIn,
+          clock_out: entry.clockOut,
+          manual_override: true,
+          reason: entry.reason,
+        })
+        .eq("id", entry.id);
+
+      if (error) {
+        alert("Fehler beim Speichern mehrerer Stempelzeiten: " + error.message);
+        await loadTimeEntries();
+        return;
+      }
+    }
+
+    await loadTimeEntries();
+    alert("Alle sichtbaren Änderungen wurden gespeichert.");
   }
 
   async function deleteTimeEntry(entryId: number) {
@@ -1888,8 +1922,54 @@ export default function Home() {
 
   const displayedTimeEntries = useMemo(() => {
     if (!correctionEmployeeId) return [];
-    return timeEntries.filter((entry) => entry.employeeId === correctionEmployeeId);
-  }, [timeEntries, correctionEmployeeId]);
+    return timeEntries.filter(
+      (entry) =>
+        entry.employeeId === correctionEmployeeId &&
+        entry.entryDate.startsWith(selectedMonth)
+    );
+  }, [timeEntries, correctionEmployeeId, selectedMonth]);
+
+  const selectedEmployeeMonthSummary = useMemo(() => {
+    if (!correctionEmployeeId) {
+      return {
+        stampedMinutes: 0,
+        vacationDays: 0,
+        vacationMinutes: 0,
+        sickDays: 0,
+        sickEntries: 0,
+      };
+    }
+
+    const stampedMinutes = timeEntries
+      .filter(
+        (entry) =>
+          entry.employeeId === correctionEmployeeId &&
+          entry.entryDate.startsWith(selectedMonth)
+      )
+      .reduce((sum, entry) => sum + calculateTimeEntryMinutes(entry), 0);
+
+    const monthShifts = shifts.filter(
+      (shift) =>
+        shift.employeeId === correctionEmployeeId &&
+        getShiftDateIso(shift.weekStart, shift.day).startsWith(selectedMonth)
+    );
+
+    const vacationShifts = monthShifts.filter((shift) => shift.status === "URLAUB");
+    const sickShifts = monthShifts.filter((shift) => shift.status === "KRANK");
+
+    const vacationMinutes = vacationShifts.reduce(
+      (sum, shift) => sum + calculateStoredShiftMinutes(shift),
+      0
+    );
+
+    return {
+      stampedMinutes,
+      vacationDays: vacationShifts.length,
+      vacationMinutes,
+      sickDays: sickShifts.length,
+      sickEntries: sickShifts.length,
+    };
+  }, [correctionEmployeeId, timeEntries, shifts, selectedMonth]);
 
   function getCellExportText(employeeId: string, day: DayKey) {
     const edit = weeklyEdits[getCellKey(employeeId, day)] ?? emptyEdit();
@@ -3419,7 +3499,19 @@ export default function Home() {
         ) : null}
 
         <div style={contentPanelStyle}>
-          <h3 style={panelTitleStyle}>Historie / Kontrolle</h3>
+          <div style={panelHeaderRowStyle}>
+            <div>
+              <h3 style={panelTitleStyle}>Historie / Kontrolle</h3>
+              <p style={panelSubTextStyle}>
+                Zeiten direkt bearbeiten. Änderungen werden automatisch als Admin-Korrektur gespeichert.
+              </p>
+            </div>
+            {adminMode ? (
+              <button onClick={saveDisplayedTimeEntries} style={primaryActionButtonStyle}>
+                Alle sichtbaren Änderungen speichern
+              </button>
+            ) : null}
+          </div>
 
           <div style={filtersBarStyle}>
             <div style={filterBoxStyle}>
@@ -3436,6 +3528,28 @@ export default function Home() {
                 ))}
               </select>
             </div>
+
+            <div style={filterBoxStyle}>
+              <label style={filterLabelStyle}>Monat</label>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                style={modernInputStyle}
+              />
+            </div>
+          </div>
+
+          <div style={{ ...dashboardGridStyle, marginBottom: "18px" }}>
+            <InfoCard title="Gestempelt">
+              {formatHours(selectedEmployeeMonthSummary.stampedMinutes)}
+            </InfoCard>
+            <InfoCard title="Krank">
+              {selectedEmployeeMonthSummary.sickDays} Tage
+            </InfoCard>
+            <InfoCard title="Urlaub">
+              {selectedEmployeeMonthSummary.vacationDays} Tage · {formatHours(selectedEmployeeMonthSummary.vacationMinutes)}
+            </InfoCard>
           </div>
 
           <div style={tableShellStyle}>
@@ -3446,7 +3560,6 @@ export default function Home() {
                   <th style={modernThStyle}>Kommen</th>
                   <th style={modernThStyle}>Gehen</th>
                   <th style={modernThStyle}>Minuten</th>
-                  <th style={modernThStyle}>Manuell</th>
                   <th style={modernThStyle}>Grund</th>
                   {adminMode ? <th style={modernThStyle}>Aktion</th> : null}
                 </tr>
@@ -3454,7 +3567,7 @@ export default function Home() {
               <tbody>
                 {displayedTimeEntries.length === 0 ? (
                   <tr>
-                    <td style={modernTdStyle} colSpan={adminMode ? 7 : 6}>
+                    <td style={modernTdStyle} colSpan={adminMode ? 6 : 5}>
                       Keine Stempelzeiten gefunden.
                     </td>
                   </tr>
@@ -3512,23 +3625,7 @@ export default function Home() {
                       <td style={modernTdStyle}>
                         {formatHours(calculateTimeEntryMinutes(entry))}
                       </td>
-                      <td style={modernTdStyle}>
-                        {adminMode ? (
-                          <input
-                            type="checkbox"
-                            checked={entry.manualOverride}
-                            onChange={(e) =>
-                              updateTimeEntryLocal(entry.id, {
-                                manualOverride: e.target.checked,
-                              })
-                            }
-                          />
-                        ) : entry.manualOverride ? (
-                          "Ja"
-                        ) : (
-                          "Nein"
-                        )}
-                      </td>
+
                       <td style={modernTdStyle}>
                         {adminMode ? (
                           <input
